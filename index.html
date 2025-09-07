@@ -9,7 +9,49 @@
 <body>
   <main>
     <h1>Levi Carver</h1>
-    <a class="btn" href="mailto:hello@lpcarver.com">Email Me</a>
+
+    <form id="contact" action="https://api.web3forms.com/submit" method="POST">
+      <input type="hidden" name="access_key" value="642d5640-c693-47e0-81b5-ab16fdead468">
+      <input type="hidden" name="from_name" value="lpcarver.com">
+      <input type="hidden" name="subject" value="New message from lpcarver.com">
+      <input type="hidden" name="redirect" value="https://lpcarver.com/?sent=1">
+
+      <label>Name
+        <input type="text" name="name" required autocomplete="name">
+      </label>
+
+      <label>Email
+        <input type="email" name="email" required autocomplete="email">
+      </label>
+
+      <label>Message
+        <textarea name="message" rows="5" required></textarea>
+      </label>
+
+      <!-- Honeypot -->
+      <input type="checkbox" name="botcheck" style="display:none">
+
+      <button type="submit" class="btn">Send</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+
+    <script>
+      const form = document.getElementById('contact');
+      const status = document.getElementById('status');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        status.textContent = 'Sending…';
+        const data = new FormData(form);
+        try {
+          const res = await fetch(form.action, {
+            method: 'POST',
+            body: data
+          });
+          if (res.ok) { form.reset(); status.textContent = 'Sent. Thanks!'; }
+          else { status.textContent = 'Error. Try again later.'; }
+        } catch { status.textContent = 'Network error. Try again.'; }
+      });
+    </script>
   </main>
 </body>
 </html>
