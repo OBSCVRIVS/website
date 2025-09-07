@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>levicarver.com</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="wrap">
+    <h1>Levi Carver</h1>
+    <nav>
+      <a href="#about">About</a>
+      <a href="#work">Work</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="about">
+      <h2>About</h2>
+      <p>Short intro about you. One or two sentences.</p>
+    </section>
+
+    <section id="work">
+      <h2>Work</h2>
+      <ul class="cards">
+        <li><h3>Project One</h3><p>One-line description.</p></li>
+        <li><h3>Project Two</h3><p>One-line description.</p></li>
+      </ul>
+    </section>
+
+    <section id="contact">
+      <h2>Contact</h2>
+      <p><a href="mailto:hello@levicarver.com">hello@levicarver.com</a></p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <small>© <span id="y"></span> Levi Carver</small>
+    <script>document.getElementById('y').textContent=new Date().getFullYear();</script>
+  </footer>
+</body>
+</html>
