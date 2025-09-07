@@ -33,3 +33,11 @@ h1 {
   background: #444;
   color: #fff;
 }
+form { max-width: 420px; margin: 0 auto; text-align: left; }
+label { display:block; font-weight:600; margin:0 0 8px; }
+input, textarea {
+  width:100%; margin:6px 0 16px; padding:10px; border-radius:6px;
+  border:1px solid #333; background:#111; color:#fff;
+}
+button.btn { width:100%; }
+#status { margin-top:12px; color:#9ee; font-size:.95rem; }
