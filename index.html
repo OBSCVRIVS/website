@@ -5,64 +5,167 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Levi Carver</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="alternate" type="application/rss+xml" href="#" title="Notes RSS">
 </head>
 <body>
-<main>
-  <h1>Levi Carver</h1>
+<header class="banner" role="banner" aria-label="Site banner">
+  <img src="assets/img/banner.jpg" alt="Abstract banner graphic">
+</header>
 
-  <form id="contact" action="https://api.web3forms.com/submit" method="POST">
-    <input type="hidden" name="access_key" value="642d5640-c693-47e0-81b5-ab16fdead468">
-    <input type="hidden" name="from_name" value="lpcarver.com">
-    <input type="hidden" name="subject" value="New message from lpcarver.com">
+<main id="main">
+  <!-- HERO -->
+  <section class="hero" aria-labelledby="hero-title">
+    <img class="avatar" src="assets/img/avatar.jpg" alt="Portrait of Levi">
+    <div class="hero-meta">
+      <h1 id="hero-title">Levi Carver</h1>
+      <p class="tagline">Technical Product Specialist · LA</p>
+      <nav class="social" aria-label="Social links">
+        <ul>
+          <li><a href="https://linkedin.com/in/USERNAME" target="_blank" rel="me noopener">LinkedIn</a></li>
+          <li><a href="https://github.com/USERNAME" target="_blank" rel="me noopener">GitHub</a></li>
+          <li><a href="https://instagram.com/USERNAME" target="_blank" rel="me noopener">Instagram</a></li>
+          <li><a href="mailto:hi@lpcarver.com">Email</a></li>
+        </ul>
+      </nav>
+    </div>
+  </section>
 
-    <label>Name
-      <input type="text" name="name" required autocomplete="name">
-    </label>
+  <!-- ABOUT -->
+  <section class="about" aria-labelledby="about-title">
+    <h2 id="about-title">About</h2>
+    <p>Technical Product Specialist in LA. I write, build, and troubleshoot. This site is my home base.</p>
+  </section>
 
-    <label>Email
-      <input type="email" name="email" required autocomplete="email">
-    </label>
+  <!-- NOTES FEED -->
+  <section class="feed" aria-labelledby="feed-title">
+    <h2 id="feed-title">Notes</h2>
+    <div id="notes"></div>
+    <nav class="pager" aria-label="Pagination">
+      <button id="newer" disabled>Newer</button>
+      <button id="older" disabled>Older</button>
+    </nav>
 
-    <label>Message
-      <textarea name="message" rows="5" required></textarea>
-    </label>
-
-    <input type="checkbox" name="botcheck" style="display:none">
-
-    <button type="submit" class="btn">Send</button>
-    <p id="status" role="status" aria-live="polite"></p>
-  </form>
-
-  <script>
-    const form = document.getElementById('contact');
-    const status = document.getElementById('status');
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      status.textContent = 'Sending…';
-      try {
-        const res = await fetch(form.action, {
-          method: 'POST',
-          body: new FormData(form),
-          headers: { 'Accept': 'application/json' }
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          form.reset();
-          status.textContent = 'Sent. Thanks!';
-        } else {
-          status.textContent = data.message || 'Error. Try again later.';
-        }
-      } catch {
-        status.textContent = 'Network error. Try again.';
+    <!-- Inline data. Edit or add notes here. -->
+    <script type="application/json" id="notes-data">
+    [
+      {
+        "id": "first-note",
+        "date": "2025-09-14T12:00:00-07:00",
+        "tags": ["meta"],
+        "text": "Owning my feed on my domain. No likes. No algorithm."
+      },
+      {
+        "id": "today-dev",
+        "date": "2025-09-13T18:30:00-07:00",
+        "tags": ["dev"],
+        "text": "Shipped contact form and dark style. Next: search and tags."
       }
-    });
-  </script>
+    ]
+    </script>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="contact" aria-labelledby="contact-title">
+    <h2 id="contact-title">Contact</h2>
+    <form id="contact" action="https://api.web3forms.com/submit" method="POST" novalidate>
+      <input type="hidden" name="access_key" value="642d5640-c693-47e0-81b5-ab16fdead468">
+      <input type="hidden" name="from_name" value="lpcarver.com">
+      <input type="hidden" name="subject" value="New message from lpcarver.com">
+
+      <label>Name
+        <input type="text" name="name" required autocomplete="name">
+      </label>
+
+      <label>Email
+        <input type="email" name="email" required autocomplete="email">
+      </label>
+
+      <label>Message
+        <textarea name="message" rows="5" required></textarea>
+      </label>
+
+      <input type="checkbox" name="botcheck" style="display:none" tabindex="-1" aria-hidden="true">
+      <button type="submit" class="btn">Send</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
 </main>
 
-<footer style="text-align:center; font-size:0.9rem; margin-top:2rem;">
-  © 2025 Levi Carver. Content licensed under 
-  <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank">CC BY-NC 4.0</a>.
+<footer class="footer" role="contentinfo">
+  <small>© 2025 Levi Carver · <a href="mailto:hi@lpcarver.com">Email</a></small><br>
+  <small>Content licensed under <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a>.</small>
 </footer>
+
+<script>
+  // NOTES RENDER
+  (function(){
+    const pageSize = 10;
+    let page = 0;
+    const notesEl = document.getElementById('notes');
+    const newer = document.getElementById('newer');
+    const older = document.getElementById('older');
+    const raw = document.getElementById('notes-data').textContent.trim();
+    let notes = [];
+    try { notes = JSON.parse(raw); } catch { notes = []; }
+    notes.sort((a,b)=> new Date(b.date) - new Date(a.date));
+
+    function render(){
+      notesEl.innerHTML = '';
+      const start = page * pageSize;
+      const slice = notes.slice(start, start + pageSize);
+      slice.forEach(n => {
+        const article = document.createElement('article');
+        article.className = 'note';
+        article.id = n.id || ('note-' + crypto.randomUUID());
+        const dt = new Date(n.date);
+        const dateStr = dt.toISOString().slice(0,10);
+        const tags = n.tags?.map(t=>`<li>#${t}</li>`).join('') || '';
+        article.innerHTML = `
+          <header>
+            <time datetime="${dt.toISOString()}">${dateStr}</time>
+            <ul class="tags">${tags}</ul>
+            <a class="permalink" href="#${article.id}" aria-label="Permalink to note">Permalink</a>
+          </header>
+          <div class="note__content">${escapeHtml(n.text)}</div>
+        `;
+        notesEl.appendChild(article);
+      });
+      newer.disabled = page === 0;
+      older.disabled = (start + pageSize) >= notes.length;
+    }
+    function escapeHtml(s){
+      const div = document.createElement('div');
+      div.innerText = s;
+      return div.innerHTML.replace(/\n/g,'<br>');
+    }
+    newer.addEventListener('click', ()=>{ if(page>0){ page--; render(); }});
+    older.addEventListener('click', ()=>{ if((page+1)*pageSize < notes.length){ page++; render(); }});
+    render();
+  }());
+
+  // CONTACT FORM
+  const form = document.getElementById('contact');
+  const status = document.getElementById('status');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.textContent = 'Sending…';
+    try {
+      const res = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'Accept': 'application/json' }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        form.reset();
+        status.textContent = 'Sent. Thanks!';
+      } else {
+        status.textContent = data.message || 'Error. Try again later.';
+      }
+    } catch {
+      status.textContent = 'Network error. Try again.';
+    }
+  });
+</script>
 </body>
 </html>
