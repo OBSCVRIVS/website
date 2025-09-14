@@ -6,7 +6,7 @@ body { background:var(--bg); color:var(--fg); font-family:system-ui,-apple-syste
 
 /* Banner */
 .banner img { width:100%; height:auto; display:block; aspect-ratio:3/1; object-fit:cover; }
-.banner--short img { aspect-ratio: 3 / 0.6; }
+.banner--short img { aspect-ratio:3/.6; }
 
 /* Top nav */
 .site-nav { border-bottom:1px solid var(--line); background:#070707; }
@@ -29,17 +29,13 @@ body { background:var(--bg); color:var(--fg); font-family:system-ui,-apple-syste
 h1, h2 { line-height:1.2; margin:.2rem 0 .6rem; }
 
 /* About clamp */
-.clamp-3 {
-  display:-webkit-box;
-  -webkit-line-clamp:3;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
-}
+.clamp-3 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .linklike { background:none; border:none; color:var(--link); padding:0; font:inherit; cursor:pointer; }
 
-/* Tweet-style notes */
+/* Tweet-style feed */
 #notes { display:flex; flex-direction:column; gap:12px; }
 .tweet { display:grid; grid-template-columns:48px 1fr; gap:12px; padding:12px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+.tweet.expanded { border-color:#555; background:#131313; }
 .tweet__avatar img { width:48px; height:48px; border-radius:50%; object-fit:cover; }
 .tweet__head { display:flex; gap:8px; align-items:center; color:var(--muted); font-size:.95rem; }
 .tweet__head .name { color:var(--fg); font-weight:600; }
@@ -63,10 +59,7 @@ button.like .count { margin-left:.25rem; }
 /* Contact form */
 form { max-width:480px; text-align:left; }
 label { display:block; font-weight:600; margin:0 0 8px; }
-input, textarea {
-  width:100%; margin:6px 0 16px; padding:10px; border-radius:6px;
-  border:1px solid var(--line); background:#111; color:var(--fg);
-}
+input, textarea { width:100%; margin:6px 0 16px; padding:10px; border-radius:6px; border:1px solid var(--line); background:#111; color:var(--fg); }
 .btn { width:100%; padding:.75rem; border-radius:6px; border:1px solid var(--line); background:#1a1a1a; color:var(--fg); cursor:pointer; }
 .btn:hover { filter:brightness(1.1); }
 #status { margin-top:12px; color:var(--link); font-size:.95rem; min-height:1.2em; }
