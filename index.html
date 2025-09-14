@@ -39,6 +39,154 @@
   <section class="about" aria-labelledby="about-title">
     <h2 id="about-title">About</h2>
     <p id="about-text" class="clamp-3">
+      I work in tech with a focus on improving digital systems and making them more accessible for everyone.
+      I value empathy, open communication, and learning from different perspectives, which guide how I approach challenges both professionally and personally.
+      I’m passionate about debate, political news, and strategy games like chess, all of which push me to think critically and see issues from multiple angles.
+      At the core of everything I do is a desire to understand people’s experiences and use that understanding to help create meaningful change.
+    </p>
+    <button id="about-toggle" class="linklike" aria-expanded="false" aria-controls="about-text">more…</button>
+  </section>
+
+  <!-- NOTES (tweet-style) -->
+  <section class="feed" aria-labelledby="feed-title">
+    <h2 id="feed-title">Notes</h2>
+    <div id="notes"></div>
+    <nav class="pager" aria-label="Pagination">
+      <button id="newer" disabled>Newer</button>
+      <button id="older" disabled>Older</button>
+    </nav>
+
+    <!-- Inline notes data -->
+    <script type="application/json" id="notes-data">
+    [
+      {
+        "id": "first-note",
+        "date": "2025-09-14T12:00:00-07:00",
+        "text": "Owning my feed on my domain. No algorithm.",
+        "likes": 3
+      },
+      {
+        "id": "today-dev",
+        "date": "2025-09-13T18:30:00-07:00",
+        "text": "Shipped banner + avatar. Next: search and tags.",
+        "likes": 1
+      }
+    ]
+    </script>
+  </section>
+</main>
+
+<footer class="footer" role="contentinfo">
+  <small>© 2025 Levi Carver · <a href="contact.html">Contact</a></small>
+</footer>
+
+<script>
+  // About expand/collapse
+  (function () {
+    const text = document.getElementById('about-text');
+    const btn = document.getElementById('about-toggle');
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      text.classList.toggle('clamp-3', expanded);
+      btn.textContent = expanded ? 'more…' : 'less';
+      if (!expanded) text.classList.remove('clamp-3');
+    });
+  }());
+
+  // Notes render (tweet-style) + likes + in-page expand
+  (function () {
+    const pageSize = 10;
+    let page = 0;
+    const container = document.getElementById('notes');
+    const newer = document.getElementById('newer');
+    const older = document.getElementById('older');
+    const raw = document.getElementById('notes-data').textContent.trim();
+    let notes = [];
+    try { notes = JSON.parse(raw); } catch { notes = []; }
+    notes.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    const likeKey = (id) => `like:${id}`;
+    function getLikeState(id){ return localStorage.getItem(likeKey(id)) === '1'; }
+    function setLikeState(id, liked){ localStorage.setItem(likeKey(id), liked ? '1' : '0'); }
+
+    function fmtTime(iso){
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, { month:'short', day:'numeric' }) + ' · ' +
+             d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+    }
+
+    function render(){
+      container.innerHTML = '';
+      const start = page * pageSize;
+      const slice = notes.slice(start, start + pageSize);
+      slice.forEach(n => {
+        const liked = getLikeState(n.id);
+        const count = Number(n.likes || 0) + (liked ? 1 : 0);
+
+        const card = document.createElement('article');
+        card.className = 'tweet';
+        card.id = n.id;
+
+        card.innerHTML = `
+          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+          <div class="tweet__body">
+            <header class="tweet__head">
+              <span class="name">Levi Carver</span>
+              <span class="handle">@levi</span>
+              <span class="dot" aria-hidden="true">·</span>
+              <time datetime="${new Date(n.date).toISOString()}">${fmtTime(n.date)}</time>
+            </header>
+            <div class="tweet__text">${escapeHtml(n.text)}</div>
+            <div class="tweet__actions">
+              <button class="like ${liked ? 'liked' : ''}" aria-pressed="${liked}" data-id="${n.id}">♥ <span class="count">${count}</span></button>
+              <a class="permalink" href="notes/${n.id}.html" aria-label="Permalink">Permalink</a>
+            </div>
+          </div>
+        `;
+        // Expand on card click (not on buttons/links)
+        card.addEventListener('click', (ev) => {
+          const t = ev.target;
+          if (t.closest('button') || t.closest('a')) return;
+          card.classList.toggle('expanded');
+        });
+
+        container.appendChild(card);
+      });
+
+      newer.disabled = page === 0;
+      older.disabled = (start + pageSize) >= notes.length;
+
+      container.querySelectorAll('button.like').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute('data-id');
+          const was = getLikeState(id);
+          setLikeState(id, !was);
+          btn.classList.toggle('liked', !was);
+          btn.setAttribute('aria-pressed', String(!was));
+          const base = Number(notes.find(x=>x.id===id).likes || 0);
+          btn.querySelector('.count').textContent = String(base + (!was ? 1 : 0));
+        });
+      });
+    }
+
+    function escapeHtml(s){
+      const div = document.createElement('div'); div.innerText = s;
+      return div.innerHTML.replace(/\n/g,'<br>');
+    }
+
+    newer.addEventListener('click', ()=>{ if(page>0){ page--; render(); }});
+    older.addEventListener('click', ()=>{ if((page+1)*pageSize < notes.length){ page++; render(); }});
+    render();
+  }());
+</script>
+</body>
+</html>
+  <!-- ABOUT (clamped with toggle) -->
+  <section class="about" aria-labelledby="about-title">
+    <h2 id="about-title">About</h2>
+    <p id="about-text" class="clamp-3">
       I work in tech with a focus on improving digital systems and making them more accessible for everyone. 
       I value empathy, open communication, and learning from different perspectives, which guide how I approach challenges both professionally and personally. 
       I’m passionate about debate, political news, and strategy games like chess, all of which push me to think critically and see issues from multiple angles. 
