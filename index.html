@@ -76,7 +76,7 @@
   }());
 
   // Notes render (tweet-style) loading from /api/notes
-  (function () {
+  (async function () {
     const pageSize = 10;
     let page = 0;
     const container = document.getElementById('notes');
@@ -100,7 +100,7 @@
         if (!r.ok) throw new Error('Failed to fetch notes');
         notes = await r.json();
         render();
-      } catch (e){
+      } catch {
         container.innerHTML = '<p style="color:#aaa">Could not load notes.</p>';
       }
     }
@@ -144,7 +144,8 @@
 
     newer.addEventListener('click', ()=>{ if(page>0){ page--; render(); }});
     older.addEventListener('click', ()=>{ if((page+1)*pageSize < notes.length){ page++; render(); }});
-    load();
+
+    await load();
   }());
 </script>
 </body>
