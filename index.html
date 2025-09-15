@@ -54,24 +54,6 @@
       <button id="newer" disabled>Newer</button>
       <button id="older" disabled>Older</button>
     </nav>
-
-    <!-- Inline notes data -->
-    <script type="application/json" id="notes-data">
-    [
-      {
-        "id": "first-note",
-        "date": "2025-09-14T12:00:00-07:00",
-        "text": "Owning my feed on my domain. No algorithm.",
-        "likes": 3
-      },
-      {
-        "id": "today-dev",
-        "date": "2025-09-13T18:30:00-07:00",
-        "text": "Shipped banner + avatar. Next: search and tags.",
-        "likes": 1
-      }
-    ]
-    </script>
   </section>
 </main>
 
@@ -93,26 +75,34 @@
     });
   }());
 
-  // Notes render (tweet-style) + likes + in-page expand
+  // Notes render (tweet-style) loading from /api/notes
   (function () {
     const pageSize = 10;
     let page = 0;
     const container = document.getElementById('notes');
     const newer = document.getElementById('newer');
     const older = document.getElementById('older');
-    const raw = document.getElementById('notes-data').textContent.trim();
     let notes = [];
-    try { notes = JSON.parse(raw); } catch { notes = []; }
-    notes.sort((a,b) => new Date(b.date) - new Date(a.date));
-
-    const likeKey = (id) => `like:${id}`;
-    function getLikeState(id){ return localStorage.getItem(likeKey(id)) === '1'; }
-    function setLikeState(id, liked){ localStorage.setItem(likeKey(id), liked ? '1' : '0'); }
 
     function fmtTime(iso){
       const d = new Date(iso);
       return d.toLocaleString(undefined, { month:'short', day:'numeric' }) + ' · ' +
              d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+    }
+    function escapeHtml(s){
+      const div = document.createElement('div'); div.innerText = s;
+      return div.innerHTML;
+    }
+
+    async function load(){
+      try {
+        const r = await fetch('/api/notes', { headers: { 'Accept':'application/json' } });
+        if (!r.ok) throw new Error('Failed to fetch notes');
+        notes = await r.json();
+        render();
+      } catch (e){
+        container.innerHTML = '<p style="color:#aaa">Could not load notes.</p>';
+      }
     }
 
     function render(){
@@ -120,9 +110,6 @@
       const start = page * pageSize;
       const slice = notes.slice(start, start + pageSize);
       slice.forEach(n => {
-        const liked = getLikeState(n.id);
-        const count = Number(n.likes || 0) + (liked ? 1 : 0);
-
         const card = document.createElement('article');
         card.className = 'tweet';
         card.id = n.id;
@@ -134,19 +121,17 @@
               <span class="name">Levi Carver</span>
               <span class="handle">@levi</span>
               <span class="dot" aria-hidden="true">·</span>
-              <time datetime="${new Date(n.date).toISOString()}">${fmtTime(n.date)}</time>
+              <time datetime="${n.created_at}">${fmtTime(n.created_at)}</time>
             </header>
-            <div class="tweet__text">${escapeHtml(n.text)}</div>
+            <div class="tweet__text">${escapeHtml(n.body)}</div>
             <div class="tweet__actions">
-              <button class="like ${liked ? 'liked' : ''}" aria-pressed="${liked}" data-id="${n.id}">♥ <span class="count">${count}</span></button>
-              <a class="permalink" href="notes/${n.id}.html" aria-label="Permalink">Permalink</a>
+              <a class="permalink" href="notes/${n.id}" aria-label="Permalink">Permalink</a>
             </div>
           </div>
         `;
-        // Expand on card click (not on buttons/links)
+
         card.addEventListener('click', (ev) => {
-          const t = ev.target;
-          if (t.closest('button') || t.closest('a')) return;
+          if (ev.target.closest('a,button')) return;
           card.classList.toggle('expanded');
         });
 
@@ -155,31 +140,12 @@
 
       newer.disabled = page === 0;
       older.disabled = (start + pageSize) >= notes.length;
-
-      container.querySelectorAll('button.like').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const id = btn.getAttribute('data-id');
-          const was = getLikeState(id);
-          setLikeState(id, !was);
-          btn.classList.toggle('liked', !was);
-          btn.setAttribute('aria-pressed', String(!was));
-          const base = Number(notes.find(x=>x.id===id).likes || 0);
-          btn.querySelector('.count').textContent = String(base + (!was ? 1 : 0));
-        });
-      });
-    }
-
-    function escapeHtml(s){
-      const div = document.createElement('div'); div.innerText = s;
-      return div.innerHTML.replace(/\n/g,'<br>');
     }
 
     newer.addEventListener('click', ()=>{ if(page>0){ page--; render(); }});
     older.addEventListener('click', ()=>{ if((page+1)*pageSize < notes.length){ page++; render(); }});
-    render();
+    load();
   }());
 </script>
 </body>
 </html>
- 
