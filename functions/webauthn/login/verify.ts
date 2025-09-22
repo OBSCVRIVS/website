@@ -1,4 +1,3 @@
-// functions/webauthn/login/verify.ts
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 
 const b64uToBytes = (s: string) => {
@@ -73,12 +72,16 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const allCreds = await cRes.json();
 
     // find the matching credential by base64url id
-    const cred = allCreds.find((c: any) => String(c.id) === String(credIdFromClient));
+    const cred = Array.isArray(allCreds) ? allCreds.find((c: any) => String(c.id) === String(credIdFromClient)) : undefined;
     if (!cred) {
-      return new Response(JSON.stringify({ error: 'no_credential_for_user', got: credIdFromClient, have: allCreds.map((c:any)=>c.id) }), {
+      return new Response(JSON.stringify({ error: 'no_credential_for_user', got: credIdFromClient, have: (allCreds || []).map((c:any)=>c.id) }), {
         status: 404, headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    // safe counter/public key extraction
+    const currentCounter = typeof cred.counter === 'number' ? cred.counter : 0;
+    const publicKeyBytes = parseBytea(cred.public_key);
 
     // verify
     const url = new URL(ctx.request.url);
@@ -90,9 +93,9 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       expectedChallenge,
       expectedOrigin,
       expectedRPID,
-      credentialID: b64uToBytes(cred.id),
-      credentialPublicKey: parseBytea(cred.public_key),
-      counter: cred.counter ?? 0,
+      credentialID: b64uToBytes(String(cred.id)),
+      credentialPublicKey: publicKeyBytes,
+      counter: currentCounter,
       requireUserVerification: false,
     });
 
@@ -102,9 +105,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       });
     }
 
-    // counter update
-    const newCounter = verification.authenticationInfo.newCounter ?? cred.counter ?? 0;
-    await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials?id=eq.${encodeURIComponent(cred.id)}`, {
+    // update counter (guard against undefined)
+    const newCounter = typeof verification.authenticationInfo.newCounter === 'number'
+      ? verification.authenticationInfo.newCounter
+      : currentCounter;
+
+    await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials?id=eq.${encodeURIComponent(String(cred.id))}`, {
       method: 'PATCH',
       headers: {
         apikey: SUPABASE_ANON_KEY,
