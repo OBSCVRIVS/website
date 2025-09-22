@@ -1,8 +1,6 @@
 name = "website"
 compatibility_date = "2025-09-22"
-compatibility_flags = ["nodejs_compat"]
 
 [pages]
+# Static files are at repo root; Functions live in /functions
 pages_build_output_dir = "."
-[build]
-command = "npm install"
