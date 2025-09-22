@@ -1,6 +1,9 @@
 {
+  "name": "website-functions",
+  "version": "1.0.0",
+  "private": true,
   "type": "module",
   "dependencies": {
-    "@simplewebauthn/server": "10.0.0"
+    "@simplewebauthn/server": "^10.0.0"
   }
 }
