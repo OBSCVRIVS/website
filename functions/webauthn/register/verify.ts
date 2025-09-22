@@ -1,40 +1,30 @@
 // functions/webauthn/register/verify.ts
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 
-const VERSION = 'register-verify-v2';
+const VERSION = 'register-verify-v3';
 
-const b64uToBytes = (s: string) => {
-  const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
-  const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
-  const bin = typeof atob !== 'undefined' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
-const bytesToB64u = (arr: ArrayBuffer | Uint8Array) => {
+const bytesToB64 = (arr: ArrayBuffer | Uint8Array) => {
   const u8 = arr instanceof Uint8Array ? arr : new Uint8Array(arr);
-  const b64 = (typeof btoa !== 'undefined'
-    ? btoa(String.fromCharCode(...u8))
-    : Buffer.from(u8).toString('base64'));
-  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/,'');
+  // btoa expects binary string
+  let s = '';
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  return (typeof btoa !== 'undefined' ? btoa(s) : Buffer.from(u8).toString('base64'));
 };
+
+function j(obj: unknown, status = 200) {
+  return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
+}
 
 export const onRequestPost: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
 
   try {
-    // cookies
     const cookie = ctx.request.headers.get('Cookie') || '';
     const jar = Object.fromEntries(cookie.split(';').map(p => p.trim().split('=')));
     const expectedChallenge = jar['wa_chal'];
     const username = (jar['wa_user'] || '').toLowerCase();
-    if (!expectedChallenge || !username) {
-      return new Response(JSON.stringify({ error: 'missing_challenge_or_username', VERSION }), {
-        status: 400, headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    if (!expectedChallenge || !username) return j({ error: 'missing_challenge_or_username', VERSION }, 400);
 
-    // client payload
     const body = await ctx.request.json();
 
     const url = new URL(ctx.request.url);
@@ -48,75 +38,60 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       expectedRPID: rpID,
       requireUserVerification: false,
     });
-    if (!verified || !registrationInfo) {
-      return new Response(JSON.stringify({ error: 'not_verified', VERSION }), {
-        status: 400, headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    if (!verified || !registrationInfo) return j({ error: 'not_verified', VERSION }, 400);
 
-    // Use the browser's credential id exactly as sent (base64url string)
+    // Use browser-provided id as stored id (base64url string)
     const credIdB64u: string = String(body.id || '');
-    if (!credIdB64u) {
-      return new Response(JSON.stringify({ error: 'missing_client_credential_id', VERSION }), {
-        status: 400, headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    if (!credIdB64u) return j({ error: 'missing_client_credential_id', VERSION }, 400);
 
-    // Public key bytes from SimpleWebAuthn
-    const credentialPublicKey = registrationInfo.credentialPublicKey; // Uint8Array
+    // Convert public key bytes → base64 string for PostgREST bytea
+    const publicKey_b64 = bytesToB64(registrationInfo.credentialPublicKey);
     const counter = registrationInfo.counter ?? 0;
 
-    // Ensure user row
-    let uRes = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`, {
+    // Ensure user
+    const uRes = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` }
     });
-    if (!uRes.ok) throw new Error(`user_select ${uRes.status}`);
+    if (!uRes.ok) return j({ error: `user_select ${uRes.status}`, VERSION }, 500);
     const users = await uRes.json();
-    let userId = users[0]?.id;
+    let userId = users[0]?.id as string | undefined;
 
     if (!userId) {
       const ins = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users`, {
         method: 'POST',
         headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SERVICE_ROLE}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation'
+          apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}`,
+          'Content-Type': 'application/json', Prefer: 'return=representation'
         },
         body: JSON.stringify({ username })
       });
-      if (!ins.ok) throw new Error(`user_insert ${ins.status} ${await ins.text()}`);
+      if (!ins.ok) return j({ error: `user_insert ${ins.status} ${await ins.text()}`, VERSION }, 500);
       userId = (await ins.json())[0].id;
     }
 
-    // Insert or upsert credential by id
+    // Insert/merge credential; send bytea as base64 string
     const credIns = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials`, {
       method: 'POST',
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SERVICE_ROLE}`,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates'
+        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}`,
+        'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates'
       },
       body: JSON.stringify({
-        id: credIdB64u,
-        user_id: userId,
-        public_key: credentialPublicKey,
+        id: credIdB64u,           // base64url string
+        user_id: userId,          // uuid
+        public_key: publicKey_b64, // bytea via base64
         counter: counter,
         transports: null
       })
     });
-    if (!credIns.ok) throw new Error(`cred_insert ${credIns.status} ${await credIns.text()}`);
+    if (!credIns.ok) return j({ error: `cred_insert ${credIns.status} ${await credIns.text()}`, VERSION }, 500);
 
-    // clear temp cookies
     const headers = new Headers({ 'Content-Type': 'application/json' });
     headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
     headers.append('Set-Cookie', 'wa_user=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
 
-    return new Response(JSON.stringify({ ok: true, id: credIdB64u, VERSION }), { headers });
+    return new Response(JSON.stringify({ ok: true, VERSION }), { headers });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: String(err), VERSION }), {
-      status: 500, headers: { 'Content-Type': 'application/json' }
-    });
+    return j({ error: String(err), VERSION }, 500);
   }
 };
