@@ -1,4 +1,4 @@
-import { generateAuthenticationOptions } from 'npm:@simplewebauthn/server@10.0.0';
+import { generateAuthenticationOptions } from '@simplewebauthn/server';
 
 export const onRequestGet: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SITE_ORIGIN } = ctx.env as any;
