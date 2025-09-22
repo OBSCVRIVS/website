@@ -29,8 +29,8 @@ body { background:var(--bg); color:var(--fg); font-family:system-ui,-apple-syste
 h1, h2 { line-height:1.2; margin:.2rem 0 .6rem; }
 
 /* About clamp */
-.clamp-3 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.linklike { background:none; border:none; color:var(--link); padding:0; font:inherit; cursor:pointer; }
+.clamp-3{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.linklike{ background:none; border:none; color:var(--link); padding:0; font:inherit; cursor:pointer; }
 
 /* Tweet-style feed */
 #notes { display:flex; flex-direction:column; gap:12px; }
@@ -39,17 +39,13 @@ h1, h2 { line-height:1.2; margin:.2rem 0 .6rem; }
 .tweet__avatar img { width:48px; height:48px; border-radius:50%; object-fit:cover; }
 .tweet__head { display:flex; gap:8px; align-items:center; color:var(--muted); font-size:.95rem; }
 .tweet__head .name { color:var(--fg); font-weight:600; }
-.tweet__head .handle { color:var(--muted); }
 .tweet__text { color:var(--fg); white-space:pre-wrap; }
 .tweet__actions { display:flex; gap:16px; align-items:center; margin-top:.35rem; }
 .tweet .permalink { color:var(--link); text-decoration:none; font-size:.95rem; }
 .tweet .permalink:hover { text-decoration:underline; }
 
-/* Like button */
-button.like { background:none; border:1px solid var(--line); border-radius:999px; padding:.25rem .6rem; color:var(--muted); cursor:pointer; }
-button.like.liked { border-color:#e33; color:#e55; }
-button.like:hover { filter:brightness(1.1); }
-button.like .count { margin-left:.25rem; }
+/* Center single-note view a bit more */
+.feed article.tweet.expanded { box-shadow:0 0 0 1px rgba(255,255,255,.03) inset; }
 
 /* Pager */
 .pager { display:flex; gap:8px; justify-content:flex-end; padding-top:8px; }
