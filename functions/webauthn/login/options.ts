@@ -1,8 +1,9 @@
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
 
 export const onRequestGet: PagesFunction = async (ctx) => {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SITE_ORIGIN } = ctx.env as any;
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = ctx.env as any;
   const url = new URL(ctx.request.url);
+  const rpID = url.hostname; // derive from request
   const username = (url.searchParams.get('username') || 'levi').toLowerCase();
 
   const uRes = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${username}`, {
@@ -18,7 +19,7 @@ export const onRequestGet: PagesFunction = async (ctx) => {
   const creds = await cRes.json();
 
   const opts = await generateAuthenticationOptions({
-    rpID: new URL(SITE_ORIGIN).hostname,
+    rpID,
     allowCredentials: creds.map((c: any) => ({ id: c.id, type: 'public-key' })),
     userVerification: 'preferred',
   });
