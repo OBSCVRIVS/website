@@ -1,13 +1,13 @@
 import { generateRegistrationOptions } from '@simplewebauthn/server';
 
 export const onRequestGet: PagesFunction = async (ctx) => {
-  const { SITE_ORIGIN } = ctx.env as any;
   const url = new URL(ctx.request.url);
+  const rpID = url.hostname; // derive from request, no env needed
   const username = (url.searchParams.get('username') || 'levi').toLowerCase();
 
   const opts = await generateRegistrationOptions({
     rpName: 'Levi Admin',
-    rpID: new URL(SITE_ORIGIN).hostname,
+    rpID,
     userID: username,
     userName: username,
     attestationType: 'none',
