@@ -1,4 +1,4 @@
-import { generateRegistrationOptions } from 'npm:@simplewebauthn/server@10.0.0';
+import { generateRegistrationOptions } from '@simplewebauthn/server';
 
 export const onRequestGet: PagesFunction = async (ctx) => {
   const { SITE_ORIGIN } = ctx.env as any;
