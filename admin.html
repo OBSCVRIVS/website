@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin – Levi Carver</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin { max-width:600px; margin:2rem auto; padding:1rem; background:#0f0f0f; border:1px solid #333; border-radius:8px; }
+    textarea { min-height:120px; }
+  </style>
+</head>
+<body>
+  <main class="admin">
+    <h1>Post a new note</h1>
+    <form id="post-form">
+      <label for="body">Content</label>
+      <textarea id="body" required></textarea>
+      <label for="secret">Session Secret</label>
+      <input id="secret" type="password" required>
+      <button class="btn" type="submit">Post</button>
+    </form>
+    <p id="status"></p>
+  </main>
+<script>
+  const form = document.getElementById('post-form');
+  const status = document.getElementById('status');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.textContent = 'Sending…';
+    try {
+      const res = await fetch('/api/post', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + document.getElementById('secret').value,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ body: document.getElementById('body').value })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      status.textContent = 'Posted!';
+      form.reset();
+    } catch (err) {
+      status.textContent = 'Error: ' + err.message;
+    }
+  });
+</script>
+</body>
+</html>
