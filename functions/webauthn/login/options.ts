@@ -1,24 +1,7 @@
 // functions/webauthn/login/options.ts
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
 
-const VERSION = 'login-options-v3';
-
-// Accept string or bytes; always return Uint8Array
-const toBytes = (v: unknown): Uint8Array => {
-  if (v instanceof Uint8Array) return v;
-  if (v instanceof ArrayBuffer) return new Uint8Array(v);
-  if (typeof v === 'string') {
-    const s = v;
-    const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
-    const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
-    const bin = typeof atob !== 'undefined' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-  // fallback
-  return new Uint8Array();
-};
+const VERSION = 'login-options-v4';
 
 export const onRequestGet: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
@@ -29,7 +12,7 @@ export const onRequestGet: PagesFunction = async (ctx) => {
     if (!username) return json({ error: 'missing_username', VERSION }, 400);
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE) return json({ error: 'missing_env', VERSION }, 500);
 
-    // user
+    // 1) user
     const uRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
@@ -39,7 +22,7 @@ export const onRequestGet: PagesFunction = async (ctx) => {
     const user = users?.[0];
     if (!user) return json({ error: 'no_user', VERSION }, 404);
 
-    // credentials
+    // 2) credentials
     const cRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_credentials?select=id,user_id&user_id=eq.${encodeURIComponent(user.id)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
@@ -48,11 +31,12 @@ export const onRequestGet: PagesFunction = async (ctx) => {
     const creds = await cRes.json();
     if (!Array.isArray(creds) || creds.length === 0) return json({ error: 'no_credentials_for_user', VERSION }, 404);
 
+    // IMPORTANT: send id as base64url STRING; client will convert to bytes
     const allowCredentials = creds
       .filter((c: any) => c?.id)
       .map((c: any) => ({
         type: 'public-key',
-        id: toBytes(c.id),                          // tolerant decode
+        id: String(c.id),
         transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble'] as const,
       }));
 
@@ -76,5 +60,8 @@ export const onRequestGet: PagesFunction = async (ctx) => {
 };
 
 function json(obj: unknown, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
