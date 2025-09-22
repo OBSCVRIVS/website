@@ -5,45 +5,77 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin – Levi Carver</title>
   <link rel="stylesheet" href="styles.css">
+  <script type="module">
+    import { startRegistration, startAuthentication } from 'https://esm.sh/@simplewebauthn/browser@10.0.0';
+
+    const qs = (s)=>document.querySelector(s);
+    const log = (t)=>qs('#status').textContent=t;
+
+    async function register() {
+      log('Preparing registration…');
+      const u = (qs('#username').value||'levi').toLowerCase();
+      const opts = await fetch(`/webauthn/register/options?username=${encodeURIComponent(u)}`).then(r=>r.json());
+      const att = await startRegistration(opts);
+      const res = await fetch('/webauthn/register/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(att) });
+      if (!res.ok) throw new Error(await res.text());
+      log('Passkey registered. You can now log in.');
+    }
+
+    async function login() {
+      log('Preparing login…');
+      const u = (qs('#username').value||'levi').toLowerCase();
+      const opts = await fetch(`/webauthn/login/options?username=${encodeURIComponent(u)}`).then(r=>r.json());
+      const asr = await startAuthentication(opts);
+      const res = await fetch('/webauthn/login/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(asr) });
+      if (!res.ok) throw new Error(await res.text());
+      log('Logged in.');
+      qs('#post').disabled = false;
+    }
+
+    async function postNote(e){
+      e.preventDefault();
+      log('Posting…');
+      const res = await fetch('/api/post', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ body: qs('#body').value })
+      });
+      if (!res.ok) { log('Post failed: ' + await res.text()); return; }
+      log('Posted.'); qs('#body').value='';
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      qs('#register').addEventListener('click', () => register().catch(e=>log(e.message)));
+      qs('#login').addEventListener('click', () => login().catch(e=>log(e.message)));
+      qs('#form').addEventListener('submit', postNote);
+    });
+  </script>
   <style>
-    .admin { max-width:600px; margin:2rem auto; padding:1rem; background:#0f0f0f; border:1px solid #333; border-radius:8px; }
+    .admin { max-width:640px; margin:2rem auto; padding:1rem; background:#0f0f0f; border:1px solid #333; border-radius:8px; }
     textarea { min-height:120px; }
+    .row{ display:flex; gap:.5rem; align-items:center; }
+    input,button,textarea{ width:100%; }
+    button{ width:auto; }
   </style>
 </head>
 <body>
   <main class="admin">
-    <h1>Post a new note</h1>
-    <form id="post-form">
-      <label for="body">Content</label>
+    <h1>Admin</h1>
+    <div class="row">
+      <label for="username" style="flex:1">Username</label>
+      <input id="username" value="levi" style="flex:3">
+    </div>
+    <div class="row" style="gap:1rem; margin:.5rem 0 1rem;">
+      <button id="register" class="btn" type="button">Register Passkey</button>
+      <button id="login" class="btn" type="button">Login with Passkey</button>
+    </div>
+    <hr style="border:0; border-top:1px solid #333; margin:1rem 0">
+    <form id="form">
+      <label for="body">New note</label>
       <textarea id="body" required></textarea>
-      <label for="secret">Session Secret</label>
-      <input id="secret" type="password" required>
-      <button class="btn" type="submit">Post</button>
+      <button id="post" class="btn" type="submit" disabled>Post</button>
     </form>
     <p id="status"></p>
   </main>
-<script>
-  const form = document.getElementById('post-form');
-  const status = document.getElementById('status');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    status.textContent = 'Sending…';
-    try {
-      const res = await fetch('/api/post', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + document.getElementById('secret').value,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ body: document.getElementById('body').value })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      status.textContent = 'Posted!';
-      form.reset();
-    } catch (err) {
-      status.textContent = 'Error: ' + err.message;
-    }
-  });
-</script>
 </body>
 </html>
