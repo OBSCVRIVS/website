@@ -1,81 +1,191 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin – Levi Carver</title>
-  <link rel="stylesheet" href="styles.css">
-  <script type="module">
-    import { startRegistration, startAuthentication } from 'https://esm.sh/@simplewebauthn/browser@10.0.0';
-
-    const qs = (s)=>document.querySelector(s);
-    const log = (t)=>qs('#status').textContent=t;
-
-    async function register() {
-      log('Preparing registration…');
-      const u = (qs('#username').value||'levi').toLowerCase();
-      const opts = await fetch(`/webauthn/register/options?username=${encodeURIComponent(u)}`).then(r=>r.json());
-      const att = await startRegistration(opts);
-      const res = await fetch('/webauthn/register/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(att) });
-      if (!res.ok) throw new Error(await res.text());
-      log('Passkey registered. You can now log in.');
-    }
-
-    async function login() {
-      log('Preparing login…');
-      const u = (qs('#username').value||'levi').toLowerCase();
-      const opts = await fetch(`/webauthn/login/options?username=${encodeURIComponent(u)}`).then(r=>r.json());
-      const asr = await startAuthentication(opts);
-      const res = await fetch('/webauthn/login/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(asr) });
-      if (!res.ok) throw new Error(await res.text());
-      log('Logged in.');
-      qs('#post').disabled = false;
-    }
-
-    async function postNote(e){
-      e.preventDefault();
-      log('Posting…');
-      const res = await fetch('/api/post', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ body: qs('#body').value })
-      });
-      if (!res.ok) { log('Post failed: ' + await res.text()); return; }
-      log('Posted.'); qs('#body').value='';
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      qs('#register').addEventListener('click', () => register().catch(e=>log(e.message)));
-      qs('#login').addEventListener('click', () => login().catch(e=>log(e.message)));
-      qs('#form').addEventListener('submit', postNote);
-    });
-  </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin · Passkey + Post</title>
   <style>
-    .admin { max-width:640px; margin:2rem auto; padding:1rem; background:#0f0f0f; border:1px solid #333; border-radius:8px; }
-    textarea { min-height:120px; }
-    .row{ display:flex; gap:.5rem; align-items:center; }
-    input,button,textarea{ width:100%; }
-    button{ width:auto; }
+    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;max-width:720px;margin:40px auto;padding:0 16px}
+    h1{font-size:1.4rem;margin:0 0 12px}
+    section{border:1px solid #ddd;border-radius:10px;padding:16px;margin:18px 0}
+    button,input,textarea{font:inherit}
+    input,textarea{width:100%;padding:10px;border:1px solid #bbb;border-radius:8px}
+    .row{display:flex;gap:8px;align-items:center}
+    .row > *{flex:1}
+    .ok{color:#0a0}
+    .err{color:#b00}
+    .muted{color:#666}
+    .hide{display:none}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace}
   </style>
 </head>
 <body>
-  <main class="admin">
-    <h1>Admin</h1>
+  <h1>Admin</h1>
+  <p class="muted">Register a passkey once, then sign in and publish notes.</p>
+
+  <section>
+    <h2>1) Register passkey</h2>
     <div class="row">
-      <label for="username" style="flex:1">Username</label>
-      <input id="username" value="levi" style="flex:3">
+      <input id="reg-username" placeholder="username" value="levi" />
+      <button id="btn-register">Register</button>
     </div>
-    <div class="row" style="gap:1rem; margin:.5rem 0 1rem;">
-      <button id="register" class="btn" type="button">Register Passkey</button>
-      <button id="login" class="btn" type="button">Login with Passkey</button>
+    <p id="reg-status" class="muted"></p>
+  </section>
+
+  <section>
+    <h2>2) Sign in with passkey</h2>
+    <div class="row">
+      <input id="login-username" placeholder="username" value="levi" />
+      <button id="btn-login">Sign in</button>
     </div>
-    <hr style="border:0; border-top:1px solid #333; margin:1rem 0">
-    <form id="form">
-      <label for="body">New note</label>
-      <textarea id="body" required></textarea>
-      <button id="post" class="btn" type="submit" disabled>Post</button>
-    </form>
-    <p id="status"></p>
-  </main>
+    <p id="login-status" class="muted"></p>
+  </section>
+
+  <section>
+    <h2>3) Publish note</h2>
+    <textarea id="post-body" rows="4" placeholder="Write something..."></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="btn-post">Publish</button>
+      <button id="btn-check" type="button">Check session</button>
+    </div>
+    <p id="post-status" class="muted"></p>
+  </section>
+
+  <section>
+    <h2>Debug</h2>
+    <pre id="out" class="mono muted" style="white-space:pre-wrap"></pre>
+  </section>
+
+<script>
+const out = (id, text, cls='muted') => {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = cls;
+};
+const j = x => JSON.stringify(x, null, 2);
+const b64uToArray = (b64u) => Uint8Array.from(atob(b64u.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+const arrayToB64u = (arr) => btoa(String.fromCharCode(...new Uint8Array(arr))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+// ---------- Register ----------
+document.getElementById('btn-register').addEventListener('click', async () => {
+  const username = document.getElementById('reg-username').value.trim().toLowerCase();
+  out('reg-status', 'Starting registration…');
+  try {
+    // 1) get options
+    const optRes = await fetch(`/webauthn/register/options?username=${encodeURIComponent(username)}`);
+    if (!optRes.ok) throw new Error('options failed');
+    const opts = await optRes.json();
+
+    // transform for WebAuthn API
+    opts.challenge = b64uToArray(opts.challenge);
+    opts.user.id = b64uToArray(opts.user.id);
+    if (Array.isArray(opts.excludeCredentials)) {
+      opts.excludeCredentials = opts.excludeCredentials.map(c => ({ ...c, id: b64uToArray(c.id) }));
+    }
+
+    // 2) create
+    const cred = await navigator.credentials.create({ publicKey: opts });
+    const att = cred.response;
+
+    // 3) send to server
+    const payload = {
+      id: cred.id,
+      rawId: arrayToB64u(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON: arrayToB64u(att.clientDataJSON),
+        attestationObject: arrayToB64u(att.attestationObject)
+      }
+    };
+    const verRes = await fetch('/webauthn/register/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const ver = await verRes.json().catch(()=>({}));
+    if (!verRes.ok) throw new Error('verify failed: ' + j(ver));
+    out('reg-status', 'Registered', 'ok');
+    document.getElementById('out').textContent = j(ver);
+  } catch (err) {
+    out('reg-status', String(err), 'err');
+  }
+});
+
+// ---------- Login ----------
+document.getElementById('btn-login').addEventListener('click', async () => {
+  const username = document.getElementById('login-username').value.trim().toLowerCase();
+  out('login-status', 'Starting sign-in…');
+  try {
+    // 1) get options
+    const optRes = await fetch(`/webauthn/login/options?username=${encodeURIComponent(username)}`);
+    if (!optRes.ok) throw new Error('options failed');
+    const opts = await optRes.json();
+
+    opts.challenge = b64uToArray(opts.challenge);
+    if (Array.isArray(opts.allowCredentials)) {
+      opts.allowCredentials = opts.allowCredentials.map(c => ({ ...c, id: b64uToArray(c.id) }));
+    }
+
+    // 2) get
+    const cred = await navigator.credentials.get({ publicKey: opts });
+    const res = cred.response;
+
+    // 3) verify
+    const payload = {
+      id: cred.id,
+      rawId: arrayToB64u(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON: arrayToB64u(res.clientDataJSON),
+        authenticatorData: arrayToB64u(res.authenticatorData),
+        signature: arrayToB64u(res.signature),
+        userHandle: res.userHandle ? arrayToB64u(res.userHandle) : null
+      }
+    };
+    const verRes = await fetch('/webauthn/login/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const ver = await verRes.json().catch(()=>({}));
+    if (!verRes.ok) throw new Error('verify failed: ' + j(ver));
+    out('login-status', 'Signed in (cookie set)', 'ok');
+    document.getElementById('out').textContent = j(ver);
+  } catch (err) {
+    out('login-status', String(err), 'err');
+  }
+});
+
+// ---------- Post ----------
+document.getElementById('btn-post').addEventListener('click', async () => {
+  const body = document.getElementById('post-body').value.trim();
+  if (!body) { out('post-status', 'Enter text first', 'err'); return; }
+  out('post-status', 'Posting…');
+  try {
+    const r = await fetch('/api/post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body })
+    });
+    const data = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error('post failed: ' + j(data));
+    out('post-status', 'Published', 'ok');
+    document.getElementById('out').textContent = j(data);
+  } catch (err) {
+    out('post-status', String(err), 'err');
+  }
+});
+
+// ---------- Check session ----------
+document.getElementById('btn-check').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/health');
+    const t = await r.text();
+    out('post-status', 'Health: ' + t, r.ok ? 'ok' : 'err');
+  } catch (e) {
+    out('post-status', 'Health check failed', 'err');
+  }
+});
+</script>
 </body>
 </html>
