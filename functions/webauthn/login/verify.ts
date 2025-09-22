@@ -1,5 +1,8 @@
 // functions/webauthn/login/verify.ts
+// v7-min: no counter usage, single-read, explicit debug
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
+
+const VERSION = 'login-verify-v7-min';
 
 const b64uToBytes = (s: string) => {
   const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
@@ -32,57 +35,48 @@ const parseBytea = (v: any): Uint8Array => {
 
 export const onRequestPost: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
-
   try {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE) {
-      return new Response(JSON.stringify({ error: 'missing envs' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      return json({ error: 'missing envs', VERSION }, 500);
     }
 
     const cookie = ctx.request.headers.get('Cookie') || '';
     const jar = Object.fromEntries(cookie.split(';').map(p => p.trim().split('=')));
     const expectedChallenge = jar['wa_chal'];
     const username = (jar['wa_user'] || '').toLowerCase();
-    if (!expectedChallenge || !username) {
-      return new Response(JSON.stringify({ error: 'missing_challenge_or_username' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
+    if (!expectedChallenge || !username) return json({ error: 'missing_challenge_or_username', VERSION }, 400);
 
     const body = await ctx.request.json();
     const credIdFromClient: string | undefined = body?.id;
-    if (!credIdFromClient) {
-      return new Response(JSON.stringify({ error: 'missing_credential_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
+    if (!credIdFromClient) return json({ error: 'missing_credential_id', VERSION }, 400);
 
+    // user
     const uRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
     );
-    if (!uRes.ok) return new Response(JSON.stringify({ error: `user_select ${uRes.status}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    if (!uRes.ok) return json({ error: `user_select ${uRes.status}`, VERSION }, 500);
     const users = await uRes.json();
     const user = users?.[0];
-    if (!user) return new Response(JSON.stringify({ error: 'no_user' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    if (!user) return json({ error: 'no_user', VERSION }, 404);
 
+    // credentials for user (no counter selected)
     const cRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_credentials?select=id,public_key,user_id&user_id=eq.${encodeURIComponent(user.id)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
     );
-    if (!cRes.ok) return new Response(JSON.stringify({ error: `cred_select ${cRes.status}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    if (!cRes.ok) return json({ error: `cred_select ${cRes.status}`, VERSION }, 500);
     const credsRaw = await cRes.json();
     const allCreds: any[] = Array.isArray(credsRaw) ? credsRaw : [];
 
     const cred = allCreds.find((c: any) => String(c?.id || '') === String(credIdFromClient));
-    if (!cred) {
-      return new Response(JSON.stringify({ error: 'no_credential_for_user', got: credIdFromClient, have: allCreds.map((c:any)=>c?.id || null) }), {
-        status: 404, headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    if (!cred) return json({ error: 'no_credential_for_user', got: credIdFromClient, have: allCreds.map((c:any)=>c?.id || null), VERSION }, 404);
 
     const credIdStr = String(cred.id || '');
-    if (!credIdStr) return new Response(JSON.stringify({ error: 'credential_has_empty_id' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    if (!credIdStr) return json({ error: 'credential_has_empty_id', VERSION }, 500);
 
     const publicKeyBytes = parseBytea(cred.public_key);
-    if (!publicKeyBytes?.length) {
-      return new Response(JSON.stringify({ error: 'credential_missing_public_key' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
+    if (!publicKeyBytes?.length) return json({ error: 'credential_missing_public_key', VERSION }, 500);
 
     const url = new URL(ctx.request.url);
     const verification = await verifyAuthenticationResponse({
@@ -92,24 +86,26 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       expectedRPID: url.hostname,
       credentialID: b64uToBytes(credIdStr),
       credentialPublicKey: publicKeyBytes,
+      // no counter at all
       requireUserVerification: false,
     });
 
-    if (!verification?.verified) {
-      return new Response(JSON.stringify({ error: 'not_verified', details: verification || null }), {
-        status: 400, headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    if (!verification?.verified) return json({ error: 'not_verified', details: verification || null, VERSION }, 400);
 
     const headers = new Headers({ 'Content-Type': 'application/json' });
     headers.append('Set-Cookie', `session=ok; HttpOnly; Secure; SameSite=Strict; Max-Age=86400; Path=/`);
     headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
     headers.append('Set-Cookie', 'wa_user=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
 
-    return new Response(JSON.stringify({ ok: true }), { headers });
+    return new Response(JSON.stringify({ ok: true, VERSION }), { headers });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500, headers: { 'Content-Type': 'application/json' }
-    });
+    return json({ error: String(err), VERSION }, 500);
   }
 };
+
+function json(obj: unknown, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
