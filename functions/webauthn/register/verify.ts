@@ -2,8 +2,9 @@ import { verifyRegistrationResponse } from '@simplewebauthn/server';
 
 export const onRequestPost: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SITE_ORIGIN } = ctx.env as any;
-  const cookies = Object.fromEntries((ctx.request.headers.get('Cookie')||'')
-    .split(';').map(p=>p.trim().split('=')) as any);
+
+  const cookies = Object.fromEntries((ctx.request.headers.get('Cookie') || '')
+    .split(';').map(p => p.trim().split('=')) as any);
   const expectedChallenge = cookies['wa_chal'];
   const username = cookies['wa_user'];
   if (!expectedChallenge || !username) return new Response('missing challenge', { status: 400 });
@@ -16,7 +17,6 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     expectedOrigin: SITE_ORIGIN,
     expectedRPID: new URL(SITE_ORIGIN).hostname,
   });
-
   if (!verified || !registrationInfo) return new Response('not verified', { status: 400 });
 
   // upsert user
@@ -28,7 +28,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
   if (!userId) {
     const ins = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users`, {
       method: 'POST',
-      headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type':'application/json' },
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
       body: JSON.stringify({ username })
     });
     const row = await ins.json();
@@ -38,17 +43,20 @@ export const onRequestPost: PagesFunction = async (ctx) => {
   const cred = registrationInfo.credential;
   await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials`, {
     method: 'POST',
-    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type':'application/json' },
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
-      id: cred.id,               // credential ID
+      id: cred.id,
       user_id: userId,
-      public_key: registrationInfo.credentialPublicKey, // byte array; Supabase column is bytea
+      public_key: registrationInfo.credentialPublicKey, // byte array (fits bytea)
       counter: registrationInfo.counter,
       transports: cred.transports || null,
     })
   });
 
-  // clear challenge cookies
   const headers = new Headers({ 'Content-Type': 'application/json' });
   headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
   headers.append('Set-Cookie', 'wa_user=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
