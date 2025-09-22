@@ -1,6 +1,2 @@
 name = "website"
 compatibility_date = "2025-09-22"
-compatibility_flags = ["nodejs_compat"]
-
-[pages]
-pages_build_output_dir = "."
