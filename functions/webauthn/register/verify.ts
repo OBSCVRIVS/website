@@ -1,6 +1,8 @@
 // functions/webauthn/register/verify.ts
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 
+const VERSION = 'register-verify-v2';
+
 const b64uToBytes = (s: string) => {
   const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
@@ -27,7 +29,7 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const expectedChallenge = jar['wa_chal'];
     const username = (jar['wa_user'] || '').toLowerCase();
     if (!expectedChallenge || !username) {
-      return new Response(JSON.stringify({ error: 'missing_challenge_or_username' }), {
+      return new Response(JSON.stringify({ error: 'missing_challenge_or_username', VERSION }), {
         status: 400, headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -47,7 +49,7 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       requireUserVerification: false,
     });
     if (!verified || !registrationInfo) {
-      return new Response(JSON.stringify({ error: 'not_verified' }), {
+      return new Response(JSON.stringify({ error: 'not_verified', VERSION }), {
         status: 400, headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -55,7 +57,7 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     // Use the browser's credential id exactly as sent (base64url string)
     const credIdB64u: string = String(body.id || '');
     if (!credIdB64u) {
-      return new Response(JSON.stringify({ error: 'missing_client_credential_id' }), {
+      return new Response(JSON.stringify({ error: 'missing_client_credential_id', VERSION }), {
         status: 400, headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -97,9 +99,9 @@ export const onRequestPost: PagesFunction = async (ctx) => {
         Prefer: 'resolution=merge-duplicates'
       },
       body: JSON.stringify({
-        id: credIdB64u,                  // base64url string that the browser will present later
+        id: credIdB64u,
         user_id: userId,
-        public_key: credentialPublicKey, // bytea
+        public_key: credentialPublicKey,
         counter: counter,
         transports: null
       })
@@ -111,9 +113,9 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
     headers.append('Set-Cookie', 'wa_user=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
 
-    return new Response(JSON.stringify({ ok: true, id: credIdB64u }), { headers });
+    return new Response(JSON.stringify({ ok: true, id: credIdB64u, VERSION }), { headers });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    return new Response(JSON.stringify({ error: String(err), VERSION }), {
       status: 500, headers: { 'Content-Type': 'application/json' }
     });
   }
