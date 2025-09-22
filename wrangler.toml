@@ -1,6 +1,6 @@
 name = "website"
-compatibility_date = "2025-01-15"
-compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-09-22"
 
 [pages]
-pages_build_output_dir = "."
+# This must point to your functions directory
+pages_build_output_dir = "functions"
