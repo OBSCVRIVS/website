@@ -14,7 +14,7 @@ export const onRequestGet: PagesFunction = async (ctx) => {
       });
     }
 
-    // 1) Find user
+    // Optional lookups (keep to confirm user exists; not used to filter credentials)
     const uRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
@@ -24,22 +24,11 @@ export const onRequestGet: PagesFunction = async (ctx) => {
     const user = users[0];
     if (!user) return new Response('no user', { status: 404 });
 
-    // 2) Find credentials for user
-    const cRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/webauthn_credentials?select=id&user_id=eq.${encodeURIComponent(user.id)}`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
-    );
-    if (!cRes.ok) return new Response(JSON.stringify({ error: `creds lookup ${cRes.status}` }), { status: 500 });
-    const creds = await cRes.json();
-    if (!Array.isArray(creds) || creds.length === 0) return new Response('no credential', { status: 404 });
-
-    // IMPORTANT: return base64url strings; the client JS will convert to bytes
-    const allowCredentials = creds.map((c: any) => ({ id: String(c.id), type: 'public-key' }));
-
+    // Do NOT pass allowCredentials → enable discoverable credential (passkey) selection
     const opts = await generateAuthenticationOptions({
       rpID,
-      allowCredentials,
       userVerification: 'preferred',
+      // allowCredentials: []  // intentionally omitted
     });
 
     const headers = new Headers({ 'Content-Type': 'application/json' });
