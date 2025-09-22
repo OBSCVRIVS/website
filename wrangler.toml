@@ -1,6 +1,7 @@
 name = "website"
 compatibility_date = "2025-09-22"
+compatibility_flags = ["nodejs_compat"]
 
 [pages]
-# This must point to your functions directory
-pages_build_output_dir = "functions"
+# Your static files live at the repo root; Functions are auto-detected in /functions
+pages_build_output_dir = "."
