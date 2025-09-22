@@ -44,12 +44,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const expectedOrigin = `${url.protocol}//${url.host}`;
 
     const { verified, registrationInfo } = await verifyRegistrationResponse({
-      response: body,
-      expectedChallenge,
-      expectedOrigin,
-      expectedRPID: rpID,
-      // optionally: requireUserVerification: true,
-    });
+  response: body,
+  expectedChallenge,
+  expectedOrigin,
+  expectedRPID: rpID,
+  requireUserVerification: false, // allow authenticators without UV
+});
 
     if (!verified || !registrationInfo) {
       return new Response(JSON.stringify({ error: 'not_verified' }), {
