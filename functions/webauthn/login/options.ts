@@ -5,7 +5,6 @@ export const onRequestGet: PagesFunction = async (ctx) => {
   const url = new URL(ctx.request.url);
   const username = (url.searchParams.get('username') || 'levi').toLowerCase();
 
-  // fetch user + their credentials
   const uRes = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${username}`, {
     headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
   });
@@ -20,7 +19,7 @@ export const onRequestGet: PagesFunction = async (ctx) => {
 
   const opts = await generateAuthenticationOptions({
     rpID: new URL(SITE_ORIGIN).hostname,
-    allowCredentials: creds.map((c:any)=>({ id: c.id, type:'public-key' })),
+    allowCredentials: creds.map((c: any) => ({ id: c.id, type: 'public-key' })),
     userVerification: 'preferred',
   });
 
