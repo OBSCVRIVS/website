@@ -1,5 +1,6 @@
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 
+// ---- helpers ----
 const b64uToBytes = (s: string) => {
   const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
@@ -48,7 +49,7 @@ export const onRequestPost: PagesFunction = async (ctx) => {
 
     // client payload
     const body = await ctx.request.json();
-    const credIdFromClient: string = body?.id;
+    const credIdFromClient: string | undefined = body?.id;
     if (!credIdFromClient) {
       return new Response(JSON.stringify({ error: 'missing_credential_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
@@ -60,7 +61,7 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     );
     if (!uRes.ok) return new Response(JSON.stringify({ error: `user_select ${uRes.status}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     const users = await uRes.json();
-    const user = users[0];
+    const user = users?.[0];
     if (!user) return new Response(JSON.stringify({ error: 'no_user' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
 
     // credentials for user
@@ -69,19 +70,27 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
     );
     if (!cRes.ok) return new Response(JSON.stringify({ error: `cred_select ${cRes.status}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    const allCreds = await cRes.json();
+    const allCredsRaw = await cRes.json();
+    const allCreds: any[] = Array.isArray(allCredsRaw) ? allCredsRaw : [];
 
-    // find the matching credential by base64url id
-    const cred = Array.isArray(allCreds) ? allCreds.find((c: any) => String(c.id) === String(credIdFromClient)) : undefined;
+    // find matching credential
+    const cred = allCreds.find((c: any) => String(c?.id || '') === String(credIdFromClient));
     if (!cred) {
-      return new Response(JSON.stringify({ error: 'no_credential_for_user', got: credIdFromClient, have: (allCreds || []).map((c:any)=>c.id) }), {
+      return new Response(JSON.stringify({ error: 'no_credential_for_user', got: credIdFromClient, have: allCreds.map((c:any)=>c?.id || null) }), {
         status: 404, headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // safe counter/public key extraction
-    const currentCounter = typeof cred.counter === 'number' ? cred.counter : 0;
+    // guard all fields
+    const credIdStr = String(cred.id || '');
+    if (!credIdStr) return new Response(JSON.stringify({ error: 'credential_has_empty_id' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+
     const publicKeyBytes = parseBytea(cred.public_key);
+    if (!publicKeyBytes?.length) {
+      return new Response(JSON.stringify({ error: 'credential_missing_public_key' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const currentCounter = Number.isFinite(cred?.counter) ? Number(cred.counter) : 0;
 
     // verify
     const url = new URL(ctx.request.url);
@@ -93,24 +102,24 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       expectedChallenge,
       expectedOrigin,
       expectedRPID,
-      credentialID: b64uToBytes(String(cred.id)),
+      credentialID: b64uToBytes(credIdStr),
       credentialPublicKey: publicKeyBytes,
       counter: currentCounter,
       requireUserVerification: false,
     });
 
-    if (!verification.verified || !verification.authenticationInfo) {
-      return new Response(JSON.stringify({ error: 'not_verified', details: verification }), {
+    if (!verification?.verified || !verification?.authenticationInfo) {
+      return new Response(JSON.stringify({ error: 'not_verified', details: verification || null }), {
         status: 400, headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // update counter (guard against undefined)
-    const newCounter = typeof verification.authenticationInfo.newCounter === 'number'
-      ? verification.authenticationInfo.newCounter
+    // update counter safely
+    const newCounter = Number.isFinite(verification.authenticationInfo.newCounter)
+      ? Number(verification.authenticationInfo.newCounter)
       : currentCounter;
 
-    await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials?id=eq.${encodeURIComponent(String(cred.id))}`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials?id=eq.${encodeURIComponent(credIdStr)}`, {
       method: 'PATCH',
       headers: {
         apikey: SUPABASE_ANON_KEY,
