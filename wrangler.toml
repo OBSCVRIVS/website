@@ -3,5 +3,4 @@ compatibility_date = "2025-09-22"
 compatibility_flags = ["nodejs_compat"]
 
 [pages]
-# Your static files live at the repo root; Functions are auto-detected in /functions
 pages_build_output_dir = "."
