@@ -1,9 +1,8 @@
 // functions/webauthn/login/verify.ts
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 
-const VERSION = 'login-verify-v4';
+const VERSION = 'login-verify-v5';
 
-// --- decoders ---
 const b64urlToBytes = (s: string) => {
   const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
@@ -18,27 +17,6 @@ const b64ToBytes = (s: string) => {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 };
-const hexToBytes = (hex: string) => {
-  const h = hex.startsWith('\\x') ? hex.slice(2) : hex.startsWith('0x') ? hex.slice(2) : hex;
-  if (h.length % 2) throw new Error('hex length odd');
-  const out = new Uint8Array(h.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
-  return out;
-};
-// Detect and decode: hex (\x..), base64 (with +/ or =), or base64url (-_ no =)
-const decodeAny = (v: any): Uint8Array => {
-  if (!v) return new Uint8Array();
-  if (v instanceof Uint8Array) return v;
-  if (v?.data && Array.isArray(v.data)) return new Uint8Array(v.data);
-  if (typeof v === 'string') {
-    if (v.startsWith('\\x') || v.startsWith('0x')) return hexToBytes(v);
-    if (/[+/]|=/.test(v)) return b64ToBytes(v);     // standard base64
-    return b64urlToBytes(v);                        // base64url
-  }
-  if (v instanceof ArrayBuffer) return new Uint8Array(v);
-  if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-  return new Uint8Array();
-};
 
 function j(obj: unknown, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -50,14 +28,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
   try {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE) return j({ error: 'missing_env', VERSION }, 500);
 
-    // cookies from /webauthn/login/options
     const cookie = ctx.request.headers.get('Cookie') || '';
     const jar = Object.fromEntries(cookie.split(';').map(p => p.trim().split('=')));
     const expectedChallenge = jar['wa_chal'];
     const username = (jar['wa_user'] || '').toLowerCase();
     if (!expectedChallenge || !username) return j({ error: 'missing_challenge_or_username', VERSION }, 400);
 
-    // client body once
     const body = await ctx.request.json();
     const credIdFromClient: string | undefined = body?.id;
     if (!credIdFromClient) return j({ error: 'missing_client_credential_id', VERSION }, 400);
@@ -72,24 +48,24 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const user = users?.[0];
     if (!user?.id) return j({ error: 'no_user', VERSION }, 404);
 
-    // creds for that user
+    // creds for user_id
     const cRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/webauthn_credentials?select=id,public_key,counter,user_id&user_id=eq.${encodeURIComponent(user.id)}`,
+      `${SUPABASE_URL}/rest/v1/webauthn_credentials?select=id,public_key,counter&user_id=eq.${encodeURIComponent(user.id)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
     );
     if (!cRes.ok) return j({ error: `cred_select ${cRes.status}`, VERSION }, 500);
     const creds = (await cRes.json()) as Array<any>;
     if (!Array.isArray(creds) || creds.length === 0) return j({ error: 'no_credentials_for_user', VERSION }, 404);
 
-    // match credential
+    // match by id
     const cred = creds.find(c => String(c?.id || '') === String(credIdFromClient));
     if (!cred) return j({ error: 'no_credential_for_user', got: credIdFromClient, have: creds.map(c => c?.id || null), VERSION }, 404);
 
-    const credentialID = b64urlToBytes(String(cred.id));       // our IDs are stored as b64url strings
-    const credentialPublicKey = decodeAny(cred.public_key);    // robust decode for bytea
+    // Decode: our register now stores bytea as base64 string
+    const credentialID = b64urlToBytes(String(cred.id));
+    const credentialPublicKey = b64ToBytes(String(cred.public_key));
     const prevCounter = Number(cred.counter ?? 0);
 
-    // verify
     const url = new URL(ctx.request.url);
     const { verified, authenticationInfo } = await verifyAuthenticationResponse({
       response: body,
@@ -109,15 +85,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const up = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials?id=eq.${encodeURIComponent(String(cred.id))}`, {
       method: 'PATCH',
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SERVICE_ROLE}`,
-        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}`, 'Content-Type': 'application/json',
       },
       body: JSON.stringify({ counter: authenticationInfo.newCounter ?? prevCounter }),
     });
     if (!up.ok) return j({ error: `counter_update ${up.status}`, VERSION }, 500);
 
-    // success cookie + clear temps
     const headers = new Headers({ 'Content-Type': 'application/json' });
     headers.append('Set-Cookie', `wa_session=${encodeURIComponent(username)}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=86400`);
     headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
