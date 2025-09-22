@@ -1,3 +1,4 @@
+// functions/webauthn/login/verify.ts
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 
 const b64uToBytes = (s: string) => {
@@ -37,7 +38,6 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       return new Response(JSON.stringify({ error: 'missing envs' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // cookies from /webauthn/login/options
     const cookie = ctx.request.headers.get('Cookie') || '';
     const jar = Object.fromEntries(cookie.split(';').map(p => p.trim().split('=')));
     const expectedChallenge = jar['wa_chal'];
@@ -46,14 +46,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       return new Response(JSON.stringify({ error: 'missing_challenge_or_username' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // client payload
     const body = await ctx.request.json();
     const credIdFromClient: string | undefined = body?.id;
     if (!credIdFromClient) {
       return new Response(JSON.stringify({ error: 'missing_credential_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // user
     const uRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
@@ -63,13 +61,13 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const user = users?.[0];
     if (!user) return new Response(JSON.stringify({ error: 'no_user' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
 
-    // credentials for user
     const cRes = await fetch(
       `${SUPABASE_URL}/rest/v1/webauthn_credentials?select=id,public_key,user_id&user_id=eq.${encodeURIComponent(user.id)}`,
       { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` } }
     );
     if (!cRes.ok) return new Response(JSON.stringify({ error: `cred_select ${cRes.status}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    const allCreds: any[] = Array.isArray(await cRes.json()) ? await cRes.json() : [];
+    const credsRaw = await cRes.json();
+    const allCreds: any[] = Array.isArray(credsRaw) ? credsRaw : [];
 
     const cred = allCreds.find((c: any) => String(c?.id || '') === String(credIdFromClient));
     if (!cred) {
@@ -86,7 +84,6 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       return new Response(JSON.stringify({ error: 'credential_missing_public_key' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // verify (no counter passed)
     const url = new URL(ctx.request.url);
     const verification = await verifyAuthenticationResponse({
       response: body,
@@ -104,7 +101,6 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       });
     }
 
-    // session cookie + clear temp cookies
     const headers = new Headers({ 'Content-Type': 'application/json' });
     headers.append('Set-Cookie', `session=ok; HttpOnly; Secure; SameSite=Strict; Max-Age=86400; Path=/`);
     headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
