@@ -1,6 +1,4 @@
 // functions/webauthn/register/verify.ts
-// Verifies the WebAuthn attestation and stores user + credential in Supabase.
-
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 
 const b64uToBytes = (s: string) => {
@@ -23,50 +21,50 @@ export const onRequestPost: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
 
   try {
-    // 1) Read cookies set by /webauthn/register/options
+    // cookies
     const cookie = ctx.request.headers.get('Cookie') || '';
     const jar = Object.fromEntries(cookie.split(';').map(p => p.trim().split('=')));
     const expectedChallenge = jar['wa_chal'];
     const username = (jar['wa_user'] || '').toLowerCase();
-
     if (!expectedChallenge || !username) {
       return new Response(JSON.stringify({ error: 'missing_challenge_or_username' }), {
         status: 400, headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // 2) Parse client response
+    // client payload
     const body = await ctx.request.json();
 
-    // 3) Verify with SimpleWebAuthn
     const url = new URL(ctx.request.url);
     const rpID = url.hostname;
     const expectedOrigin = `${url.protocol}//${url.host}`;
 
     const { verified, registrationInfo } = await verifyRegistrationResponse({
-  response: body,
-  expectedChallenge,
-  expectedOrigin,
-  expectedRPID: rpID,
-  requireUserVerification: false, // allow authenticators without UV
-});
-
+      response: body,
+      expectedChallenge,
+      expectedOrigin,
+      expectedRPID: rpID,
+      requireUserVerification: false,
+    });
     if (!verified || !registrationInfo) {
       return new Response(JSON.stringify({ error: 'not_verified' }), {
         status: 400, headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Extract fields (v10 returns bytes for IDs/keys)
-    const credentialID = registrationInfo.credentialID;                 // Uint8Array
-    const credentialPublicKey = registrationInfo.credentialPublicKey;   // Uint8Array
+    // Use the browser's credential id exactly as sent (base64url string)
+    const credIdB64u: string = String(body.id || '');
+    if (!credIdB64u) {
+      return new Response(JSON.stringify({ error: 'missing_client_credential_id' }), {
+        status: 400, headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Public key bytes from SimpleWebAuthn
+    const credentialPublicKey = registrationInfo.credentialPublicKey; // Uint8Array
     const counter = registrationInfo.counter ?? 0;
 
-    // Store ID as base64url string so we can send it back to browsers
-    const credIdB64u = bytesToB64u(credentialID);
-
-    // 4) Ensure user exists
-    // SELECT user
+    // Ensure user row
     let uRes = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users?select=id,username&username=eq.${encodeURIComponent(username)}`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SERVICE_ROLE}` }
     });
@@ -74,7 +72,6 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const users = await uRes.json();
     let userId = users[0]?.id;
 
-    // INSERT if missing
     if (!userId) {
       const ins = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_users`, {
         method: 'POST',
@@ -86,36 +83,30 @@ export const onRequestPost: PagesFunction = async (ctx) => {
         },
         body: JSON.stringify({ username })
       });
-      if (!ins.ok) {
-        const t = await ins.text();
-        throw new Error(`user_insert ${ins.status} ${t}`);
-      }
-      const row = await ins.json();
-      userId = row[0].id;
+      if (!ins.ok) throw new Error(`user_insert ${ins.status} ${await ins.text()}`);
+      userId = (await ins.json())[0].id;
     }
 
-    // 5) Insert credential
+    // Insert or upsert credential by id
     const credIns = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SERVICE_ROLE}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates'
       },
       body: JSON.stringify({
-        id: credIdB64u,                 // text (base64url)
-        user_id: userId,                // uuid
+        id: credIdB64u,                  // base64url string that the browser will present later
+        user_id: userId,
         public_key: credentialPublicKey, // bytea
         counter: counter,
         transports: null
       })
     });
-    if (!credIns.ok) {
-      const t = await credIns.text();
-      throw new Error(`cred_insert ${credIns.status} ${t}`);
-    }
+    if (!credIns.ok) throw new Error(`cred_insert ${credIns.status} ${await credIns.text()}`);
 
-    // 6) Clear temp cookies
+    // clear temp cookies
     const headers = new Headers({ 'Content-Type': 'application/json' });
     headers.append('Set-Cookie', 'wa_chal=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
     headers.append('Set-Cookie', 'wa_user=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict');
