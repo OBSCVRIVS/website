@@ -4,3 +4,5 @@ compatibility_flags = ["nodejs_compat"]
 
 [pages]
 pages_build_output_dir = "."
+[build]
+command = "npm install"
