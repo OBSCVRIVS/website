@@ -1,327 +1,169 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Admin · Passkey + Post</title>
-  <style>
-    :root { --ok:#0a0; --err:#b00; --muted:#666; }
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px}
-    h1{font-size:1.4rem;margin:0 0 12px}
-    section{border:1px solid #ddd;border-radius:10px;padding:16px;margin:18px 0}
-    button,input,textarea{font:inherit}
-    input,textarea{width:100%;padding:10px;border:1px solid #bbb;border-radius:8px}
-    .row{display:flex;gap:8px;align-items:center}
-    .row > *{flex:1}
-    .ok{color:var(--ok)}
-    .err{color:var(--err)}
-    .muted{color:var(--muted)}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-    .btn-row{display:flex;gap:8px}
-    /* spinner */
-    .spinner{display:inline-block;width:16px;height:16px;border:2px solid #999;border-top-color:transparent;border-radius:50%;vertical-align:-3px;animation:spin 0.7s linear infinite;margin-left:8px}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    /* toast */
-    .toast{position:fixed;right:16px;bottom:16px;max-width:340px;padding:10px 12px;border-radius:8px;background:#111;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25);display:none}
-    .toast.show{display:block}
-    .toast.ok{background:#0a6}
-    .toast.err{background:#c33}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · New Note</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="theme-color" content="#FFFFFF">
+
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme') || 'auto';
+      var initial = (t==='light'||t==='dark')
+        ? t
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', initial);
+    })();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
 <body>
-  <h1>Admin</h1>
-  <p class="muted">Register a passkey once, then sign in and publish notes.</p>
+<main class="container" style="max-width:960px;margin:2rem auto;padding:1rem">
+  <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem">
+    <h1>New Note</h1>
+    <label class="muted" style="display:inline-flex;gap:.5rem;align-items:center">
+      Theme:
+      <select id="theme-select">
+        <option value="auto">Auto (sunrise/sunset)</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  </header>
 
-  <section>
-    <h2>1) Register passkey</h2>
-    <div class="row">
-      <input id="reg-username" placeholder="username" value="levi" />
-      <button id="btn-register">Register</button>
+  <form id="note-form" class="grid" style="display:grid;gap:1rem;grid-template-columns:1fr 1fr">
+    <label style="display:flex;flex-direction:column;gap:.5rem">
+      <span>Markdown</span>
+      <textarea id="body" rows="22" placeholder="Write Markdown…" style="width:100%"></textarea>
+    </label>
+
+    <section>
+      <header class="muted" style="margin-bottom:.5rem">Preview</header>
+      <article id="preview" class="tweet__text" style="min-height:22rem;border:1px solid var(--field-border);padding:1rem"></article>
+    </section>
+
+    <label>
+      <span class="muted">Created at</span>
+      <input id="created_at" type="datetime-local">
+    </label>
+
+    <div style="align-self:end">
+      <button type="submit" class="btn primary">Save</button>
     </div>
-    <p id="reg-status" class="muted" aria-live="polite"></p>
-  </section>
-
-  <section>
-    <h2>2) Sign in with passkey</h2>
-    <div class="row">
-      <input id="login-username" placeholder="username" value="levi" />
-      <button id="btn-login">Sign in</button>
-    </div>
-    <p id="login-status" class="muted" aria-live="polite"></p>
-  </section>
-
-  <section>
-    <h2>3) Publish note</h2>
-    <textarea id="post-body" rows="4" placeholder="Write something..."></textarea>
-    <div class="btn-row" style="margin-top:8px">
-      <button id="btn-post">Publish</button>
-      <button id="btn-check" type="button">Check session</button>
-    </div>
-    <p id="post-status" class="muted" aria-live="polite"></p>
-  </section>
-
-  <section>
-    <h2>4) Manage posts</h2>
-    <div class="btn-row" style="margin-bottom:8px">
-      <button id="btn-load">Load latest</button>
-      <button id="btn-refresh" type="button">Refresh</button>
-    </div>
-    <p id="list-status" class="muted" aria-live="polite"></p>
-    <div id="notes-list"></div>
-  </section>
-
-  <section>
-    <h2>Debug</h2>
-    <pre id="out" class="mono muted" style="white-space:pre-wrap"></pre>
-  </section>
-
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </form>
+</main>
 
 <script>
-/* ---------- helpers ---------- */
-const setStatus = (id, text, cls='muted', spinning=false) => {
-  const el = document.getElementById(id);
-  el.className = cls;
-  el.textContent = text;
-  if (spinning) { const s = document.createElement('span'); s.className='spinner'; el.appendChild(s); }
-};
-const showToast = (text, ok=false) => {
-  const t = document.getElementById('toast');
-  t.textContent = text;
-  t.className = 'toast show ' + (ok ? 'ok' : 'err');
-  clearTimeout(showToast._h); showToast._h = setTimeout(()=>{ t.className='toast'; }, 2800);
-};
-const j = x => JSON.stringify(x, null, 2);
-const escapeHtml = (s) => { const d=document.createElement('div'); d.innerText=String(s??''); return d.innerHTML; };
+  // Markdown preview
+  const bodyEl = document.getElementById('body');
+  const previewEl = document.getElementById('preview');
+  function renderPreview(){
+    marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+    const html = marked.parse(bodyEl.value || "");
+    previewEl.innerHTML = DOMPurify.sanitize(html, {
+      ADD_ATTR:['target','rel'],
+      FORBID_TAGS:['script','style']
+    });
+    previewEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+  }
+  bodyEl.addEventListener('input', renderPreview);
+  document.addEventListener('DOMContentLoaded', renderPreview);
 
-/* base64url <-> bytes for WebAuthn */
-const b64uToArray = (b64u) => Uint8Array.from(atob(b64u.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
-const arrayToB64u = (arr) => btoa(String.fromCharCode(...new Uint8Array(arr))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-
-/* disable/enable buttons during async */
-const lock = (btn, on=true) => { btn.disabled = on; if(on) btn.dataset._label = btn.textContent, btn.textContent='Working…'; else btn.textContent=btn.dataset._label||btn.textContent; };
-
-/* ---------- Register ---------- */
-document.getElementById('btn-register').addEventListener('click', async (ev) => {
-  const btn = ev.currentTarget;
-  const username = document.getElementById('reg-username').value.trim().toLowerCase();
-  if (!username) { showToast('Enter username', false); return; }
-  setStatus('reg-status','Starting registration…','muted',true); lock(btn,true);
-  try {
-    const optRes = await fetch(`/webauthn/register/options?username=${encodeURIComponent(username)}`);
-    const text = await optRes.text();
-    let opts; try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
-    if (!optRes.ok) throw new Error(opts.error || 'options failed');
-
-    opts.challenge = b64uToArray(opts.challenge);
-    opts.user.id = b64uToArray(opts.user.id);
-    if (Array.isArray(opts.excludeCredentials)) {
-      opts.excludeCredentials = opts.excludeCredentials.map(c => ({ ...c, id: b64uToArray(c.id) }));
-    }
-
-    const cred = await navigator.credentials.create({ publicKey: opts });
-    const att = cred.response;
-
+  // Example submit (replace with your API)
+  document.getElementById('note-form').addEventListener('submit', async (e)=>{
+    e.preventDefault();
     const payload = {
-      id: cred.id,
-      rawId: arrayToB64u(cred.rawId),
-      type: cred.type,
-      response: {
-        clientDataJSON: arrayToB64u(att.clientDataJSON),
-        attestationObject: arrayToB64u(att.attestationObject)
-      }
+      body: bodyEl.value,
+      created_at: new Date(document.getElementById('created_at').value || Date.now()).toISOString()
     };
-
-    const verRes = await fetch('/webauthn/register/verify', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const verText = await verRes.text(); let ver; try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
-    if (!verRes.ok) throw new Error(ver.error || 'verify failed');
-
-    setStatus('reg-status','Registered','ok');
-    showToast('Passkey registered', true);
-    document.getElementById('out').textContent = j(ver);
-  } catch (err) {
-    setStatus('reg-status', String(err), 'err');
-    showToast('Registration failed', false);
-  } finally { lock(btn,false); }
-});
-
-/* ---------- Login ---------- */
-document.getElementById('btn-login').addEventListener('click', async (ev) => {
-  const btn = ev.currentTarget;
-  const username = document.getElementById('login-username').value.trim().toLowerCase();
-  if (!username) { showToast('Enter username', false); return; }
-  setStatus('login-status','Starting sign-in…','muted',true); lock(btn,true);
-  try {
-    const optRes = await fetch(`/webauthn/login/options?username=${encodeURIComponent(username)}`);
-    const text = await optRes.text();
-    let opts; try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
-    if (!optRes.ok) throw new Error(opts.error || 'options failed');
-
-    opts.challenge = b64uToArray(opts.challenge);
-    if (Array.isArray(opts.allowCredentials)) {
-      opts.allowCredentials = opts.allowCredentials.map(c => ({ ...c, id: b64uToArray(c.id) }));
-    }
-
-    const cred = await navigator.credentials.get({ publicKey: opts });
-    const res = cred.response;
-
-    const payload = {
-      id: cred.id,
-      rawId: arrayToB64u(cred.rawId),
-      type: cred.type,
-      response: {
-        clientDataJSON: arrayToB64u(res.clientDataJSON),
-        authenticatorData: arrayToB64u(res.authenticatorData),
-        signature: arrayToB64u(res.signature),
-        userHandle: res.userHandle ? arrayToB64u(res.userHandle) : null
-      }
-    };
-
-    const verRes = await fetch('/webauthn/login/verify', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const verText = await verRes.text(); let ver; try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
-    if (!verRes.ok) throw new Error(ver.error || 'verify failed');
-
-    setStatus('login-status','Signed in (cookie set)','ok');
-    showToast('Signed in', true);
-    document.getElementById('out').textContent = j(ver);
-  } catch (err) {
-    setStatus('login-status', String(err), 'err');
-    showToast('Sign-in failed', false);
-  } finally { lock(btn,false); }
-});
-
-/* ---------- Post ---------- */
-document.getElementById('btn-post').addEventListener('click', async (ev) => {
-  const btn = ev.currentTarget;
-  const bodyEl = document.getElementById('post-body');
-  const text = bodyEl.value.trim();
-  if (!text) { setStatus('post-status','Enter text first','err'); return; }
-  setStatus('post-status','Posting…','muted',true); lock(btn,true);
-  try {
-    const r = await fetch('/api/post', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body: text })
-    });
-    const t = await r.text(); let data; try { data = JSON.parse(t); } catch { data = { raw: t }; }
-    if (!r.ok || !data?.ok) throw new Error((data && (data.error||data.detail)) || 'post failed');
-
-    setStatus('post-status','Published','ok');
-    showToast('Note published', true);
-    bodyEl.value = '';
-    document.getElementById('out').textContent = j(data);
-  } catch (err) {
-    setStatus('post-status', String(err), 'err');
-    showToast('Publish failed', false);
-  } finally { lock(btn,false); }
-});
-
-/* ---------- Admin list / hide / delete ---------- */
-const elList = document.getElementById('notes-list');
-document.getElementById('btn-load').addEventListener('click', loadAdminList);
-document.getElementById('btn-refresh').addEventListener('click', loadAdminList);
-
-function noteRow(n){
-  const wrap = document.createElement('div');
-  wrap.style.border = '1px solid #ddd';
-  wrap.style.borderRadius = '8px';
-  wrap.style.padding = '10px';
-  wrap.style.margin = '8px 0';
-  wrap.dataset.id = n.id;
-
-  const meta = new Date(n.created_at).toLocaleString();
-  wrap.innerHTML = `
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-      <div style="flex:1">
-        <div style="font-size:.95rem;white-space:pre-wrap">${escapeHtml(n.body)}</div>
-        <div class="muted" style="font-size:.8rem;margin-top:6px">${meta} · ${n.username} · ${n.is_hidden ? 'hidden' : 'visible'}</div>
-      </div>
-      <div style="flex:0 0 auto;display:flex;gap:6px">
-        <button data-act="toggle">${n.is_hidden ? 'Unhide' : 'Hide'}</button>
-        <button data-act="delete" style="color:#b00">Delete</button>
-      </div>
-    </div>
-  `;
-  wrap.querySelectorAll('button').forEach(b=>{
-    b.addEventListener('click', async (e)=>{
-      const id = wrap.dataset.id;
-      const act = b.getAttribute('data-act');
-      if (act === 'toggle') {
-        await hideToggle(id, !n.is_hidden, wrap, b);
-        n.is_hidden = !n.is_hidden;
-      } else if (act === 'delete') {
-        if (!confirm('Delete this note permanently?')) return;
-        await deleteNote(id, wrap);
-      }
-    });
+    // Replace with your endpoint:
+    // await fetch('/api/notes', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    alert('Would POST:\n' + JSON.stringify(payload, null, 2));
   });
-  return wrap;
-}
 
-async function loadAdminList(){
-  setStatus('list-status','Loading…','muted',true);
-  try{
-    const r = await fetch('/api/admin/notes?limit=50');
-    const t = await r.text(); let data; try { data = JSON.parse(t); } catch { throw new Error('parse failed: '+t.slice(0,120)); }
-    if (!r.ok || !Array.isArray(data)) throw new Error((data && data.error) || 'load failed');
-    elList.innerHTML = '';
-    data.forEach(n => elList.appendChild(noteRow(n)));
-    setStatus('list-status', `Loaded ${data.length} note(s)`, 'ok');
-  }catch(err){
-    setStatus('list-status', String(err), 'err');
-  }
-}
+  // Theme engine (same as site)
+  (function () {
+    const CONFIG = { lat: 34.0522, lon: -118.2437 };
+    const STORAGE_KEY = "theme";
+    const selectEl = document.getElementById("theme-select");
 
-async function hideToggle(id, hidden, rowEl, btnEl){
-  btnEl.disabled = true; const old = btnEl.textContent; btnEl.textContent = 'Working…';
-  try{
-    const r = await fetch('/api/admin/notes/hide', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id, hidden })
-    });
-    const t = await r.text(); let d; try { d = JSON.parse(t);} catch { d={raw:t}; }
-    if (!r.ok) throw new Error(d.error || 'update failed');
-    rowEl.querySelector('.muted').textContent =
-      new Date(d.created_at).toLocaleString() + ' · ' + d.username + ' · ' + (d.is_hidden ? 'hidden':'visible');
-    btnEl.textContent = d.is_hidden ? 'Unhide' : 'Hide';
-    showToast(d.is_hidden ? 'Hidden' : 'Unhidden', true);
-  }catch(e){
-    showToast(String(e), false);
-  }finally{
-    btnEl.disabled = false; btnEl.textContent = old;
-  }
-}
+    function sunTimes(date, lat, lon) {
+      const rad = Math.PI/180, dayMs = 86400000;
+      const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      const J2000 = 946684800000;
+      const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
+      const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545);
+      function solNoon(){
+        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+        const L = (M + 102.9372 + C + 180) % 360;
+        return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
+      }
+      function hourAngle(){
+        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+        const L = (M + 102.9372 + C + 180) % 360;
+        const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
+        const φ = lat*rad, h0 = (-6)*rad;
+        const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
+        if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH);
+      }
+      function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
+      const Jnoon = solNoon();
+      const H = hourAngle();
+      const Jrise = Jnoon - (H/(2*Math.PI));
+      const Jset  = Jnoon + (H/(2*Math.PI));
+      return { sunrise: jdToDate(Jrise), sunset: jdToDate(Jset) };
+    }
 
-async function deleteNote(id, rowEl){
-  try{
-    const r = await fetch('/api/admin/notes/delete', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id })
-    });
-    const t = await r.text(); let d; try { d = JSON.parse(t);} catch { d={raw:t}; }
-    if (!r.ok || !d.ok) throw new Error(d.error || 'delete failed');
-    rowEl.remove();
-    showToast('Deleted', true);
-  }catch(e){
-    showToast(String(e), false);
-  }
-}
+    function isNightNow(lat, lon){
+      const now = new Date();
+      const { sunrise, sunset } = sunTimes(now, lat, lon);
+      return (now < sunrise) || (now > sunset);
+    }
+    function systemPrefersDark(){
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    function applyTheme(theme){
+      const html = document.documentElement;
+      let resolved = theme;
+      if (theme === "auto") {
+        try { resolved = isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light"; }
+        catch { resolved = systemPrefersDark() ? "dark" : "light"; }
+      }
+      html.setAttribute("data-theme", resolved);
+      const bg = getComputedStyle(html).getPropertyValue("--bg").trim();
+      let meta = document.querySelector('meta[name="theme-color"]');
+      if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
+      meta.setAttribute("content", bg);
+    }
 
-/* ---------- Check session ---------- */
-document.getElementById('btn-check').addEventListener('click', async () => {
-  try {
-    const r = await fetch('/api/health');
-    const t = await r.text();
-    setStatus('post-status', 'Health: ' + t, r.ok ? 'ok' : 'err');
-  } catch {
-    setStatus('post-status', 'Health check failed', 'err');
-  }
-});
+    const saved = localStorage.getItem(STORAGE_KEY) || "auto";
+    applyTheme(saved);
+    if (selectEl) selectEl.value = saved;
+
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
+      });
+    }
+    setInterval(() => {
+      if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
+    }, 60*60*1000);
+
+    if (selectEl) {
+      selectEl.addEventListener("change", (e) => {
+        const value = e.target.value;
+        localStorage.setItem(STORAGE_KEY, value);
+        applyTheme(value);
+      });
+    }
+    window.Theme = { get: () => localStorage.getItem(STORAGE_KEY) || "auto",
+                     set: (mode) => { localStorage.setItem(STORAGE_KEY, mode); applyTheme(mode); } };
+  })();
 </script>
 </body>
 </html>
