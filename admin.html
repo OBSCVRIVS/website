@@ -21,10 +21,10 @@
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
 <body>
-<main class="container" style="max-width:960px;margin:2rem auto;padding:1rem">
-  <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem">
+<main class="container">
+  <header class="flex-between">
     <h1>New Note</h1>
-    <label class="muted" style="display:inline-flex;gap:.5rem;align-items:center">
+    <label class="muted">
       Theme:
       <select id="theme-select">
         <option value="auto">Auto (sunrise/sunset)</option>
@@ -34,15 +34,15 @@
     </label>
   </header>
 
-  <form id="note-form" class="grid" style="display:grid;gap:1rem;grid-template-columns:1fr 1fr">
-    <label style="display:flex;flex-direction:column;gap:.5rem">
+  <form id="note-form" class="grid-2">
+    <label>
       <span>Markdown</span>
-      <textarea id="body" rows="22" placeholder="Write Markdown…" style="width:100%"></textarea>
+      <textarea id="body" rows="22" placeholder="Write Markdown…"></textarea>
     </label>
 
     <section>
-      <header class="muted" style="margin-bottom:.5rem">Preview</header>
-      <article id="preview" class="tweet__text" style="min-height:22rem;border:1px solid var(--field-border);padding:1rem"></article>
+      <header class="muted">Preview</header>
+      <article id="preview" class="tweet__text card"></article>
     </section>
 
     <label>
@@ -50,7 +50,7 @@
       <input id="created_at" type="datetime-local">
     </label>
 
-    <div style="align-self:end">
+    <div>
       <button type="submit" class="btn primary">Save</button>
     </div>
   </form>
