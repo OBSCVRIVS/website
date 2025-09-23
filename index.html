@@ -7,28 +7,28 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
- 
-
   <!-- Markdown + Sanitizer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
 <body>
-<header class="banner" role="banner" aria-label="Site banner">
-  <img src="assets/img/banner_blue_hour.png" alt="Blue hour banner">
-</header>
 
-<nav class="site-nav" aria-label="Site">
+<!-- TOP NAV (now above banner) -->
+<nav class="site-nav site-nav--top" aria-label="Site">
   <div class="site-nav__inner">
     <a class="brand" href="/">Levi Carver</a>
     <a class="nav-link" href="contact.html">Contact</a>
   </div>
 </nav>
 
-<main id="main">
-  <!-- HERO -->
-  <section class="hero" aria-labelledby="hero-title">
-    <img class="avatar" src="assets/img/avatar_anime_blue_hour.png" alt="Portrait of Levi">
+<!-- PROFILE HEADER: short banner + overlapping avatar + meta -->
+<header class="profile-header" role="banner" aria-label="Profile">
+  <div class="banner">
+    <img src="assets/img/banner_blue_hour.png" alt="Blue hour banner">
+  </div>
+
+  <div class="profile-header__inner">
+    <img class="avatar avatar--overlap" src="assets/img/avatar_anime_blue_hour.png" alt="Portrait of Levi">
     <div class="hero-meta">
       <h1 id="hero-title">Levi Carver</h1>
       <p class="tagline">Technical Product Specialist · Los Angeles, California, USA</p>
@@ -39,8 +39,10 @@
         </ul>
       </nav>
     </div>
-  </section>
+  </div>
+</header>
 
+<main id="main">
   <!-- ABOUT (clamped with toggle) -->
   <section class="about" aria-labelledby="about-title">
     <h2 id="about-title">About</h2>
@@ -66,8 +68,6 @@
 
 <footer class="footer" role="contentinfo">
   <small>© 2025 Levi Carver · <a href="contact.html">Contact</a></small>
-
-
 </footer>
 
 <script>
@@ -105,7 +105,6 @@
     const older = document.getElementById('older');
     let notes = [];
 
-    // 24-hour time + TZ label
     function fmtTime(iso, tz){
       const d = new Date(iso);
       const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -151,7 +150,6 @@
           </div>
         `;
 
-        // Expand/collapse card on background click
         card.addEventListener('click', (ev) => {
           if (ev.target.closest('a,button')) return;
           card.classList.toggle('expanded');
@@ -160,7 +158,6 @@
         container.appendChild(card);
       });
 
-      // Make links safe
       container.querySelectorAll('.tweet__text a').forEach(a=>{
         a.target = '_blank'; a.rel = 'noopener noreferrer';
       });
@@ -172,7 +169,7 @@
     newer.addEventListener('click', ()=>{ if(page>0){ page--; render(); }});
     older.addEventListener('click', ()=>{ if((page+1)*pageSize < notes.length){ page++; render(); }});
 
-        await load();
+    await load();
   }());
 </script>
 
@@ -189,17 +186,15 @@
     const html = document.documentElement;
     html.setAttribute('data-theme', mode);
 
-    // keep meta theme-color in sync
     const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
     meta.setAttribute('content', bg);
   }
 
-  applyThemeByClock();                       // initial
-  setInterval(applyThemeByClock, 15*60*1000); // update every 15 min
+  applyThemeByClock();
+  setInterval(applyThemeByClock, 15*60*1000);
 })();
-  
 </script>
 </body>
 </html>
