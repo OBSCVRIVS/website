@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
+  <!-- Prevent theme flash -->
   <script>
     (function(){
       var t = localStorage.getItem('theme') || 'auto';
@@ -17,6 +18,7 @@
     })();
   </script>
 
+  <!-- Markdown + Sanitizer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
@@ -24,8 +26,7 @@
 <main class="container">
   <header class="flex-between">
     <h1>Admin</h1>
-    <label class="muted">
-      Theme:
+    <label class="muted">Theme:
       <select id="theme-select">
         <option value="auto">Auto (sunrise/sunset)</option>
         <option value="light">Light</option>
@@ -115,47 +116,20 @@
 </main>
 
 <script>
-/* ===== Utils ===== */
-// --- API base + helper ---
-const API_BASE = localStorage.getItem('API_BASE') || 'https://website-rt3.pages.dev/api';
-function api(path, opts = {}) {
-  const url = `${API_BASE}/${String(path).replace(/^\//,'')}`;
-  return fetch(url, opts);
-}
+/* ============================================================
+   Utils
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const dbg = $('#debug');
+function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
 
-// --- WebAuthn endpoint resolver ---
-// Tries: POST {base}/options -> GET {base}/options -> POST {base}
-async function waOptions(pathBase, payload) {
-  let r = await api(`${pathBase}/options`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-  });
-  if (r.status === 405) r = await api(`${pathBase}/options`, { method:'GET' });
-  if (r.status === 404) r = await api(`${pathBase}`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-  });
-  if (!r.ok) throw new Error(`options failed: ${r.status}`);
-  return r.json();
-}
-// Tries: POST {base}/verify -> POST {base}
-async function waVerify(pathBase, payload) {
-  let r = await api(`${pathBase}/verify`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-  });
-  if (r.status === 404 || r.status === 405) {
-    r = await api(`${pathBase}`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-    });
-  }
-  if (!r.ok) throw new Error(`verify failed: ${r.status}`);
-  return r.json();
-}
-  
-/* ===== API base + robust fetch ===== */
-/* Default to your Pages Functions base. You can override in the UI if needed. */
+/* ============================================================
+   API base + robust fetch (NO duplicates)
+   ============================================================ */
 function getDefaultApiBase(){
   const ls = localStorage.getItem('API_BASE');
   if (ls) return ls;
-  return 'https://website-rt3.pages.dev/api';
+  return 'https://website-rt3.pages.dev/api'; // Pages Functions default
 }
 let API_BASE = getDefaultApiBase();
 function setApiBase(v){ API_BASE = v.replace(/\/$/,''); localStorage.setItem('API_BASE', API_BASE); renderApiBase(); }
@@ -180,7 +154,9 @@ function renderApiBase(){
 $('#api-save')?.addEventListener('click', ()=> setApiBase($('#api-base').value.trim()));
 document.addEventListener('DOMContentLoaded', renderApiBase);
 
-/* ===== Time format ===== */
+/* ============================================================
+   Time format
+   ============================================================ */
 function fmtLocal(iso, tz){
   const d = new Date(iso);
   const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -191,10 +167,11 @@ function fmtLocal(iso, tz){
   return `${ds} ${ts} ${tzLabel}`;
 }
 
-/* ===== Theme engine ===== */
+/* ============================================================
+   Theme engine
+   ============================================================ */
 (function () {
   const CONFIG = { lat: 34.0522, lon: -118.2437 };
-  const STORAGE_KEY = "theme";
   const selectEl = $("#theme-select");
   function sunTimes(date, lat, lon) {
     const rad = Math.PI/180, dayMs = 86400000;
@@ -247,17 +224,18 @@ function fmtLocal(iso, tz){
   }
   const saved = localStorage.getItem("theme") || "auto";
   applyTheme(saved);
-  if (selectEl) selectEl.value = saved;
+  selectEl?.addEventListener("change", (e) => { const v = e.target.value; localStorage.setItem("theme", v); applyTheme(v); });
   if (window.matchMedia) {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
       if ((localStorage.getItem("theme") || "auto") === "auto") applyTheme("auto");
     });
   }
   setInterval(() => { if ((localStorage.getItem("theme") || "auto") === "auto") applyTheme("auto"); }, 3600000);
-  selectEl?.addEventListener("change", (e) => { const v = e.target.value; localStorage.setItem("theme", v); applyTheme(v); });
 })();
 
-/* ===== Markdown preview ===== */
+/* ============================================================
+   Markdown preview
+   ============================================================ */
 const bodyEl = $('#body');
 const previewEl = $('#preview');
 function renderPreview(){
@@ -269,7 +247,9 @@ function renderPreview(){
 }
 document.addEventListener('DOMContentLoaded', () => { bodyEl?.addEventListener('input', renderPreview); renderPreview(); });
 
-/* ===== Session + auth UI ===== */
+/* ============================================================
+   Session + auth UI
+   ============================================================ */
 const UI = {
   composer: $('#composer'),
   posts: $('#posts'),
@@ -301,7 +281,9 @@ function refreshAuthUI(){
   UI.authState.textContent = authed ? 'Signed in' : 'Signed out';
 }
 
-/* ===== WebAuthn helpers ===== */
+/* ============================================================
+   WebAuthn helpers
+   ============================================================ */
 function b64urlToBuf(b64url){
   const pad = '='.repeat((4 - b64url.length % 4) % 4);
   const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad;
@@ -317,13 +299,52 @@ function bufToB64url(buf){
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
-/* ===== Passkey flows (Pages Functions use /webauthn/...) ===== */
+/* ============================================================
+   WebAuthn endpoint resolver (handles 405/404 variants)
+   ============================================================ */
+async function waOptions(pathBase, payload) {
+  // Try POST .../options
+  try {
+    return await api(`${pathBase}/options`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+  } catch(e) {
+    // If 405/404, try GET .../options
+    if (String(e.message).startsWith('405') || String(e.message).startsWith('404')) {
+      try { return await api(`${pathBase}/options`, { method:'GET' }); } catch(_) {}
+      // Finally try POST base
+      return await api(`${pathBase}`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+    }
+    throw e;
+  }
+}
+async function waVerify(pathBase, payload) {
+  // Try POST .../verify
+  try {
+    return await api(`${pathBase}/verify`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+  } catch(e) {
+    if (String(e.message).startsWith('404') || String(e.message).startsWith('405')) {
+      // Some setups verify on the base path
+      return await api(`${pathBase}`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+    }
+    throw e;
+  }
+}
+
+/* ============================================================
+   Passkey flows (Pages Functions use /webauthn/...)
+   ============================================================ */
 async function passkeyRegister(){
   try{
     const username = UI.username.value.trim();
     if (!username) { alert('Enter a username.'); return; }
 
-    // use Pages Functions base /webauthn/register
     const { publicKey: pk } = await waOptions('/webauthn/register', { username });
 
     pk.challenge = b64urlToBuf(pk.challenge);
@@ -354,7 +375,6 @@ async function passkeyLogin(){
   try{
     const username = UI.username.value.trim();
 
-    // use Pages Functions base /webauthn/login
     const { publicKey: pk } = await waOptions('/webauthn/login', { username });
 
     pk.challenge = b64urlToBuf(pk.challenge);
@@ -384,13 +404,17 @@ async function passkeyLogin(){
   }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
 }
 
-/* ===== Wire auth buttons ===== */
+/* ============================================================
+   Wire buttons
+   ============================================================ */
 UI.btnRegister?.addEventListener('click', passkeyRegister);
 UI.btnLogin?.addEventListener('click', passkeyLogin);
 UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
 renderSavedUsers(); refreshAuthUI();
 
-/* ===== Debug buttons ===== */
+/* ============================================================
+   Debug
+   ============================================================ */
 $('#dbg-ping')?.addEventListener('click', async ()=>{
   try{ const j = await api('/health'); log('ping →', j); }
   catch(e){ log('ping error →', e?.message || e); }
@@ -398,7 +422,9 @@ $('#dbg-ping')?.addEventListener('click', async ()=>{
 $('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), API_BASE }));
 $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
 
-/* ===== Notes ===== */
+/* ============================================================
+   Notes
+   ============================================================ */
 const postsBox = $('#posts-list');
 const showHidden = $('#show-hidden');
 $('#btn-reload')?.addEventListener('click', loadPosts);
@@ -496,7 +522,9 @@ async function deletePost(id){
   }catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
 }
 
-/* ===== Init ===== */
+/* ============================================================
+   Init
+   ============================================================ */
 document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI();
   renderSavedUsers();
