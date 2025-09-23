@@ -7,16 +7,7 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
-  <!-- Reduce flash: set initial theme before paint -->
-  <script>
-    (function(){
-      var t = localStorage.getItem('theme') || 'auto';
-      var initial = (t==='light'||t==='dark')
-        ? t
-        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-      document.documentElement.setAttribute('data-theme', initial);
-    })();
-  </script>
+ 
 
   <!-- Markdown + Sanitizer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
@@ -76,15 +67,7 @@
 <footer class="footer" role="contentinfo">
   <small>© 2025 Levi Carver · <a href="contact.html">Contact</a></small>
 
-  <!-- Theme control (owner override) -->
-  <label class="muted" style="display:inline-flex;gap:.5rem;align-items:center;margin-left:1rem">
-    Theme:
-    <select id="theme-select">
-      <option value="auto">Auto (sunrise/sunset)</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
-  </label>
+
 </footer>
 
 <script>
@@ -192,88 +175,30 @@
     await load();
   }());
 
-  // ===== Theme engine: auto by sunrise/sunset, override via select =====
-  (function () {
-    const CONFIG = { lat: 34.0522, lon: -118.2437 }; // LA
-    const STORAGE_KEY = "theme";
-    const selectEl = document.getElementById("theme-select");
+ <!-- ===== Theme: auto by local clock (no geo) ===== -->
+<script>
+(function () {
+  const LIGHT_START_H = 7;   // 07:00 local
+  const LIGHT_END_H   = 19;  // 19:00 local
 
-    function sunTimes(date, lat, lon) {
-      const rad = Math.PI/180, dayMs = 86400000;
-      const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-      const J2000 = 946684800000;
-      const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
-      const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545);
-      function solNoon(){
-        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
-        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
-        const L = (M + 102.9372 + C + 180) % 360;
-        return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
-      }
-      function hourAngle(){
-        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
-        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
-        const L = (M + 102.9372 + C + 180) % 360;
-        const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
-        const φ = lat*rad, h0 = (-6)*rad;
-        const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
-        if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH);
-      }
-      function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
-      const Jnoon = solNoon();
-      const H = hourAngle();
-      const Jrise = Jnoon - (H/(2*Math.PI));
-      const Jset  = Jnoon + (H/(2*Math.PI));
-      return { sunrise: jdToDate(Jrise), sunset: jdToDate(Jset) };
-    }
+  function applyThemeByClock() {
+    const now = new Date();
+    const h = now.getHours();
+    const mode = (h >= LIGHT_START_H && h < LIGHT_END_H) ? 'light' : 'dark';
+    const html = document.documentElement;
+    html.setAttribute('data-theme', mode);
 
-    function isNightNow(lat, lon){
-      const now = new Date();
-      const { sunrise, sunset } = sunTimes(now, lat, lon);
-      return (now < sunrise) || (now > sunset);
-    }
-    function systemPrefersDark(){
-      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    function applyTheme(theme){
-      const html = document.documentElement;
-      let resolved = theme;
-      if (theme === "auto") {
-        try { resolved = isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light"; }
-        catch { resolved = systemPrefersDark() ? "dark" : "light"; }
-      }
-      html.setAttribute("data-theme", resolved);
-      const bg = getComputedStyle(html).getPropertyValue("--bg").trim();
-      let meta = document.querySelector('meta[name="theme-color"]');
-      if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
-      meta.setAttribute("content", bg);
-    }
+    // keep meta theme-color in sync
+    const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+    meta.setAttribute('content', bg);
+  }
 
-    const saved = localStorage.getItem(STORAGE_KEY) || "auto";
-    applyTheme(saved);
-    if (selectEl) selectEl.value = saved;
-
-    if (window.matchMedia) {
-      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-        if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
-      });
-    }
-    setInterval(() => {
-      if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
-    }, 60*60*1000);
-
-    if (selectEl) {
-      selectEl.addEventListener("change", (e) => {
-        const value = e.target.value;
-        localStorage.setItem(STORAGE_KEY, value);
-        applyTheme(value);
-      });
-    }
-
-    // Programmatic control if needed:
-    window.Theme = { get: () => localStorage.getItem(STORAGE_KEY) || "auto",
-                     set: (mode) => { localStorage.setItem(STORAGE_KEY, mode); applyTheme(mode); } };
-  })();
+  applyThemeByClock();                  // initial
+  setInterval(applyThemeByClock, 15*60*1000); // update every 15 min
+})();
+  
 </script>
 </body>
 </html>
