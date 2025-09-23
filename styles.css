@@ -59,6 +59,8 @@ img {
   -webkit-tap-highlight-color: var(--accent);
 }
 
+.muted { color: var(--muted); }
+
 /* ============================================================
    HEADER / NAV
    ============================================================ */
@@ -318,4 +320,30 @@ input, textarea {
   padding-left: .75em;
   border-left: 3px solid var(--accent);
   color: var(--muted);
+}
+
+/* ============================================================
+   ADMIN / UTILITY CLASSES (shared)
+   ============================================================ */
+.container{
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+.grid-2{
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr 1fr;
+}
+.flex-between{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.card{
+  border: 1px solid var(--field-border);
+  padding: 1rem;
+  border-radius: 4px;
+  background: var(--field);
 }
