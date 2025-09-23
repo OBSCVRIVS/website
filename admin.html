@@ -6,7 +6,6 @@
   <title>Admin · Notes</title>
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
-
   <script>
     (function(){
       var t = localStorage.getItem('theme') || 'auto';
@@ -16,7 +15,6 @@
       document.documentElement.setAttribute('data-theme', initial);
     })();
   </script>
-
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
@@ -110,7 +108,7 @@ const $ = s => document.querySelector(s);
 const dbg = $('#debug');
 function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
 
-/* ===== API (origin-based, no manual base) ===== */
+/* ===== API (origin-based) ===== */
 const ORIGIN = window.location.origin;
 async function api(path, opts={}){
   const url = `${ORIGIN}/${String(path).replace(/^\//,'')}`;
@@ -216,20 +214,29 @@ function b64urlToBuf(b64url){ const pad = '='.repeat((4 - b64url.length % 4) % 4
 function bufToB64url(buf){ const bytes = new Uint8Array(buf); let bin=''; for (let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 
-/* ===== Endpoint resolver (tries both root and /api) ===== */
-const BASES = ['', 'api']; // '' → root, matches your functions/webauthn/*
+/* ===== Endpoint resolver (root and /api; GET with username when needed) ===== */
+const BASES = ['', 'api']; // '' → root matches functions/webauthn/*
 async function fetchJSON(url, init){ return api(url, init); }
+function addUserParam(url, username){
+  if (!username) return url;
+  const u = new URL(url, ORIGIN);
+  u.searchParams.set('username', username.toLowerCase().trim());
+  return u.pathname + u.search; // return path+query for api()
+}
 async function waOptions(flow, payload){
+  const username = (UI.username?.value || '').trim();
   const attempts=[];
   for (const b of BASES){
     const base = b? `/${b}` : '';
-    // POST .../options then GET fallback
+    // 1) POST .../options (some backends)
     const postUrl = `${base}/webauthn/${flow}/options`;
     try { return { data: await fetchJSON(postUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: postUrl }; }
     catch(e){ attempts.push(`POST ${postUrl} → ${e.message}`); }
-    try { return { data: await fetchJSON(postUrl, { method:'GET' }), url: postUrl }; }
-    catch(e){ attempts.push(`GET ${postUrl} → ${e.message}`); }
-    // Single-endpoint form
+    // 2) GET .../options?username=...  ← your register/options.ts expects this
+    const getUrl = addUserParam(postUrl, username);
+    try { return { data: await fetchJSON(getUrl, { method:'GET' }), url: getUrl }; }
+    catch(e){ attempts.push(`GET ${getUrl} → ${e.message}`); }
+    // 3) Single-endpoint form
     const singleUrl = `${base}/webauthn/${flow}`;
     try { return { data: await fetchJSON(singleUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: singleUrl }; }
     catch(e){ attempts.push(`POST ${singleUrl} → ${e.message}`); }
@@ -374,8 +381,7 @@ async function deletePost(id){
 /* ===== Init ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI(); renderSavedUsers(); if (getSession()){ await loadPosts(); }
-  // safety: drop any old manual base
-  localStorage.removeItem('API_BASE');
+  localStorage.removeItem('API_BASE'); // ensure old manual base is cleared
 });
 </script>
 </body>
