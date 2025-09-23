@@ -22,7 +22,8 @@
 <main class="container">
   <header class="flex-between">
     <h1>Admin</h1>
-    <label class="muted">Theme:
+    <label class="muted">
+      Theme:
       <select id="theme-select">
         <option value="auto">Auto (sunrise/sunset)</option>
         <option value="light">Light</option>
@@ -80,12 +81,7 @@
   <section id="posts" class="card" style="display:none">
     <div class="flex-between" style="margin-bottom:.5rem">
       <h2 style="margin:0">Posts</h2>
-      <div style="display:flex;gap:.5rem">
-        <button id="btn-reload" class="btn ghost">Reload</button>
-        <label class="muted" style="display:inline-flex;align-items:center;gap:.35rem">
-          <input id="show-hidden" type="checkbox"> Show hidden
-        </label>
-      </div>
+      <button id="btn-reload" class="btn ghost">Reload</button>
     </div>
     <div id="posts-list" class="card" style="padding:0"></div>
   </section>
@@ -233,173 +229,14 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes endpoints ===== */
-// CREATE → POST /api/post
+/* ===== Notes API ===== */
 async function notesCreate(payload){
-  return fetchJSON('/api/post', {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify(payload)
-  });
+  return api('/api/post', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
 }
-// LIST → GET /api/notes
 async function notesList(){
-  return fetchJSON('/api/notes', { method:'GET' });
-}
-
-// PATCH HIDDEN with fallbacks: /notes/:id PATCH → /api/notes/:id PATCH → POST emulate
-async function notesPatch(id, body){
-  const paths = [
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'PATCH' },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'PATCH' },
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
-  ];
-  let lastErr;
-  for (const p of paths){
-    try{
-      const payload = p.emulate ? { action:'update', ...body } : body;
-      return await fetchJSON(p.url, {
-        method: p.method,
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify(payload)
-      });
-    }catch(e){ lastErr = e; }
-  }
-  throw lastErr || new Error('Patch failed');
-}
-
-// DELETE with fallbacks: /notes/:id DELETE → /api/notes/:id DELETE → POST emulate
-async function notesDelete(id){
-  const paths = [
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
-  ];
-  let lastErr;
-  for (const p of paths){
-    try{
-      const init = p.emulate
-        ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'delete' }) }
-        : { method:p.method };
-      return await fetchJSON(p.url, init);
-    }catch(e){ lastErr = e; }
-  }
-  throw lastErr || new Error('Delete failed');
-}
-
-/* ===== Optional: decode base64/base64url bodies for display (no duplicates) ===== */
-function tryDecodeBody(s){
-  if (typeof s !== 'string') return s;
-  const clean = s.trim();
-  // if it already looks like readable text, keep it
-  if (/[a-zA-Z]/.test(clean) && /\s/.test(clean) && !/^[A-Za-z0-9+/_=-]+$/.test(clean)) return s;
-  const toText = (val) => {
-    try{
-      const b64 = val.replace(/-/g,'+').replace(/_/g,'/');
-      const bin = atob(b64);
-      const bytes = Uint8Array.from(bin, c=>c.charCodeAt(0));
-      const out = new TextDecoder().decode(bytes);
-      // ensure printable range
-      if (!/[\u0000-\u001F\u007F]/.test(out)) return out;
-    }catch{}
-    return null;
-  };
-  const d = toText(clean);
-  // only use decoded if it differs meaningfully from original
-  if (d && d.replace(/\s+/g,' ').trim() !== clean.replace(/\s+/g,' ').trim()) return d;
-  return s;
-}
-
-/* ===== Passkey flows ===== */
-async function passkeyRegister(){
-  try{
-    const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
-    const { data } = await waOptions('register');
-    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
-    pk.challenge = b64urlToBuf(pk.challenge);
-    if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
-    if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-    const cred = await navigator.credentials.create({ publicKey: pk });
-    const { data: out } = await waVerify('register', {
-      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
-      response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
-    });
-    if (!out?.ok) throw new Error('Registration verify failed');
-    alert('POSTED.'); saveUser(username);
-  }catch(e){ log('register error:', e?.message || e); alert('Post failed'); }
-}
-async function passkeyLogin(){
-  try{
-    const username = UI.username.value.trim();
-    const { data } = await waOptions('login');
-    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
-    pk.challenge = b64urlToBuf(pk.challenge);
-    if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-    const cred = await navigator.credentials.get({ publicKey: pk });
-    const { data: out } = await waVerify('login', {
-      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
-      response: { authenticatorData: bufToB64url(cred.response.authenticatorData), clientDataJSON: bufToB64url(cred.response.clientDataJSON), signature: bufToB64url(cred.response.signature), userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null }
-    });
-    if (!out?.ok) throw new Error('Login verify failed');
-    setSession('ok'); UI.authUser.textContent = username ? `User: ${username}` : '';
-    await loadPosts();
-  }catch(e){ log('login error:', e?.message || e); alert('Post failed'); }
-}
-
-/* ===== Wire ===== */
-UI.btnRegister?.addEventListener('click', passkeyRegister);
-UI.btnLogin?.addEventListener('click', passkeyLogin);
-UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
-renderSavedUsers(); refreshAuthUI();
-
-/* ===== Debug ===== */
-$('#dbg-ping')?.addEventListener('click', async ()=>{
-  const tries = ['/health','/api/health'];
-  for (const t of tries) { try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); } }
-});
-$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), origin: ORIGIN }));
-$('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
-
-/* ===== Notes ===== */
-const postsBox = $('#posts-list');
-const showHidden = $('#show-hidden');
-
-/* Markdown → HTML (same as frontend) */
-function md(html){
-  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-  const out = marked.parse(html || "");
-  return DOMPurify.sanitize(out, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
-}
-
-/* API helpers */
-async function notesCreate(payload){
-  return api('/api/post', {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify(payload)
-  });
-}
-async function notesList(all){
-  const qs = all ? '?all=1' : '';
-  try { return await api(`/api/notes${qs}`); } catch {}
-  return await api(`/notes${qs}`);
-}
-async function notesPatch(id, body){
-  const tries = [
-    { url: `/notes/${encodeURIComponent(id)}`, method:'PATCH', body },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method:'PATCH', body },
-    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body: { action:'update', ...body } },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body: { action:'update', ...body } },
-  ];
-  let lastErr;
-  for (const t of tries){
-    try{
-      return await api(t.url, { method:t.method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
-    }catch(e){ lastErr = e; }
-  }
-  throw lastErr || new Error('Patch failed');
+  try { return await api('/api/notes?all=1'); } catch {}
+  try { return await api('/notes?all=1'); } catch {}
+  return await api('/api/notes');
 }
 async function notesDelete(id){
   const tries = [
@@ -420,12 +257,16 @@ async function notesDelete(id){
   throw lastErr || new Error('Delete failed');
 }
 
-/* Toggle */
-async function toggleHidden(id, makeHidden){
-  return notesPatch(id, { is_hidden: !!makeHidden });
+/* ===== Posts UI (mirror frontend). No hide. 2/3 content, 1/3 actions ===== */
+const postsBox = $('#posts-list');
+$('#btn-reload')?.addEventListener('click', loadPosts);
+
+function mdRender(src){
+  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+  const html = marked.parse(src || "");
+  return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
 }
 
-/* Mirror frontend card exactly. Hidden → strikethrough + muted + “Unhide”. */
 function renderPosts(notes){
   if (!postsBox) return;
   if (!Array.isArray(notes) || notes.length === 0){
@@ -433,72 +274,47 @@ function renderPosts(notes){
     return;
   }
 
-  // local markdown renderer (same as feed)
-  const md = (src) => {
-    marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-    const html = marked.parse(src || "");
-    return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
-  };
-
-  const rows = notes.map(n=>{
+  postsBox.innerHTML = notes.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
-    const hidden = !!n.is_hidden;
-    const textStyle = hidden ? 'text-decoration:line-through;opacity:.6;color:var(--muted)' : '';
-
     return `
       <article class="tweet" id="${n.id}" style="padding:1rem;border-top:1px solid var(--field-border)">
-        <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
-        <div class="tweet__body">
-          <header class="tweet__head">
-            <span class="name">Levi Carver</span>
-            <span class="dot" aria-hidden="true">·</span>
-            <time datetime="${n.created_at}">${when}</time>
-          </header>
-          <div class="tweet__text" style="${textStyle}">${md(n.body)}</div>
-          <div class="tweet__actions" style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
-            <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${hidden?1:0}">
-              ${hidden ? 'Unhide' : 'Hide'}
-            </button>
+        <div style="display:flex;gap:1rem">
+          <!-- avatar -->
+          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+
+          <!-- content 2/3 -->
+          <div class="tweet__body" style="flex:2">
+            <header class="tweet__head">
+              <span class="name">Levi Carver</span>
+              <span class="dot" aria-hidden="true">·</span>
+              <time datetime="${n.created_at}">${when}</time>
+            </header>
+            <div class="tweet__text">${mdRender(n.body)}</div>
+          </div>
+
+          <!-- actions 1/3 -->
+          <div style="flex:1;display:flex;justify-content:flex-end;align-items:flex-start;gap:.5rem">
+            <a class="permalink" href="/notes/${n.id}" target="_blank" rel="noopener noreferrer">Permalink</a>
             <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
-            <a class="permalink" href="/notes/${n.id}" target="_blank" rel="noopener noreferrer" style="margin-left:auto">Permalink</a>
           </div>
         </div>
       </article>
     `;
   }).join('');
 
-  postsBox.innerHTML = rows;
-
-  // safe links inside markdown
   postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
 
-  // expand/collapse like feed
-  postsBox.querySelectorAll('.tweet').forEach(card=>{
-    card.addEventListener('click', (ev)=>{ if (ev.target.closest('a,button')) return; card.classList.toggle('expanded'); });
-  });
-
-  // actions
-  postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id');
-      const hidden = b.getAttribute('data-hidden') === '1';
-      try { await notesPatch(id, { is_hidden: !hidden }); await loadPosts(); }
-      catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
-    });
-  });
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
-      if (!confirm('Delete this post?')) return;
+      if (!confirm('Delete this post? This cannot be undone.')) return;
       try { await notesDelete(id); await loadPosts(); }
       catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
     });
   });
 }
 
-/* Wire + load */
-$('#btn-reload')?.addEventListener('click', loadPosts);
-showHidden?.addEventListener('change', ()=> loadPosts());
+/* Save */
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -510,9 +326,11 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
     await loadPosts();
   }catch(err){ log('save error:', err?.message || err); alert('Post failed'); }
 });
+
+/* Load */
 async function loadPosts(){
   try{
-    const notes = await notesList(true); // always include hidden
+    const notes = await notesList();
     window.__NOTES = Array.isArray(notes) ? notes : [];
     renderPosts(window.__NOTES);
   }catch(e){
@@ -520,8 +338,57 @@ async function loadPosts(){
     postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>';
   }
 }
-  
-/* ===== Init ===== */
+
+/* ===== Passkey flows ===== */
+async function passkeyRegister(){
+  try{
+    const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
+    const { data } = await waOptions('register');
+    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
+    if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+    const cred = await navigator.credentials.create({ publicKey: pk });
+    const { data: out } = await waVerify('register', {
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
+    });
+    if (!out?.ok) throw new Error('Registration verify failed');
+    alert('Registered.');
+    saveUser(username);
+  }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
+}
+async function passkeyLogin(){
+  try{
+    const username = UI.username.value.trim();
+    const { data } = await waOptions('login');
+    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+    const cred = await navigator.credentials.get({ publicKey: pk });
+    const { data: out } = await waVerify('login', {
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      response: { authenticatorData: bufToB64url(cred.response.authenticatorData), clientDataJSON: bufToB64url(cred.response.clientDataJSON), signature: bufToB64url(cred.response.signature), userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null }
+    });
+    if (!out?.ok) throw new Error('Login verify failed');
+    setSession('ok'); UI.authUser.textContent = username ? `User: ${username}` : '';
+    await loadPosts();
+  }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
+}
+
+/* ===== Wire + init ===== */
+UI.btnRegister?.addEventListener('click', passkeyRegister);
+UI.btnLogin?.addEventListener('click', passkeyLogin);
+UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
+renderSavedUsers(); refreshAuthUI();
+
+$('#dbg-ping')?.addEventListener('click', async ()=>{
+  const tries = ['/health','/api/health'];
+  for (const t of tries) { try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); } }
+});
+$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), origin: ORIGIN }));
+$('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
+
 document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI(); renderSavedUsers(); await loadPosts();
   localStorage.removeItem('API_BASE');
