@@ -1,78 +1,26 @@
 /* ============================================================
-   THEME TOKENS
-   ============================================================ */
-:root {
-  --accent: #EE1F25;
-  --accent-fill: #E41E24; /* darker variant for white text */
-}
-
-/* Light */
-:root[data-theme="light"] {
-  --bg: #FFFFFF;
-  --ink: #0B0B0B;
-  --muted: #5C5C5C;
-  --field: #F7F7F7;
-  --field-border: #D9D9D9;
-  --focus: var(--accent);
-}
-
-/* Dark */
-:root[data-theme="dark"] {
-  --bg: #0C0C0C;
-  --ink: #F2F2F2;
-  --muted: #BDBDBD;
-  --field: #111111;
-  --field-border: #333333;
-  --focus: var(--accent);
-}
-
-/* ============================================================
-   GLOBAL
-   ============================================================ */
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
-}
-
-a {
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: .2em;
-}
-a:hover,
-a:focus {
-  text-decoration-thickness: .14em;
-}
-
-img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-}
-
-* {
-  accent-color: var(--accent);
-  -webkit-tap-highlight-color: var(--accent);
-}
-
-.muted { color: var(--muted); }
-
-/* ============================================================
    HEADER / NAV
    ============================================================ */
+.banner {
+  position: relative;
+  width: 100%;
+  height: 220px;              /* shorter banner */
+  overflow: hidden;
+}
+@media (min-width: 1000px){ .banner { height: 260px; } }
 .banner img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
   display: block;
 }
 
 .site-nav {
   background: var(--bg);
   border-bottom: 1px solid var(--field-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 .site-nav__inner {
   max-width: 960px;
@@ -93,296 +41,48 @@ img {
 }
 
 /* ============================================================
-   HERO
+   HERO (centered; avatar overlaps banner)
    ============================================================ */
 .hero {
   max-width: 960px;
-  margin: 2rem auto;
+  margin: -64px auto 2rem;    /* pull hero up to overlap banner ~50% of avatar */
   padding: 0 1rem;
   display: flex;
-  gap: 1.5rem;
+  flex-direction: column;
   align-items: center;
+  gap: .75rem;
+  text-align: center;
 }
+
 .hero .avatar {
-  width: 120px;
+  width: 128px;
+  height: 128px;
   border-radius: 50%;
   border: 3px solid var(--accent);
+  object-fit: cover;
+  box-shadow: 0 0 0 4px var(--bg);  /* halo cutout so it sits on the banner cleanly */
 }
+
 .hero-meta h1 {
-  margin: 0 0 .25rem;
+  margin: .75rem 0 .25rem;    /* tighter gap under the overlap */
   font-size: 2rem;
 }
-.tagline {
-  margin: 0 0 1rem;
-  color: var(--muted);
-}
+.tagline { margin: 0 0 .5rem; color: var(--muted); }
+
 .social ul {
   list-style: none;
-  margin: 0;
+  margin: .25rem 0 0;
   padding: 0;
-  display: flex;
-  gap: 1rem;
-}
-
-/* ============================================================
-   ABOUT
-   ============================================================ */
-.about {
-  max-width: 720px;
-  margin: 2rem auto;
-  padding: 0 1rem;
-}
-.about p {
-  margin-bottom: 1rem;
-}
-.clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.linklike {
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: var(--accent);
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-/* ============================================================
-   FEED / NOTES
-   ============================================================ */
-.feed {
-  max-width: 720px;
-  margin: 2rem auto;
-  padding: 0 1rem;
-}
-.tweet {
   display: flex;
   gap: .75rem;
-  padding: 1rem 0;
-  border-bottom: 1px solid var(--field-border);
-  cursor: pointer;
-}
-.tweet.expanded {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-.tweet__avatar img {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-}
-.tweet__body {
-  flex: 1;
-}
-.tweet__head {
-  font-size: .9rem;
-  margin-bottom: .25rem;
-}
-.tweet__head .name {
-  font-weight: 600;
-}
-.tweet__head time {
-  color: var(--muted);
-}
-.tweet__text {
-  margin: .25rem 0 .5rem;
-}
-.tweet__actions {
-  font-size: .85rem;
-}
-.pager {
-  margin-top: 1rem;
-  display: flex;
-  gap: .5rem;
-}
-.pager button {
-  padding: .4rem .8rem;
-  border: 1px solid var(--field-border);
-  background: var(--field);
-  color: var(--ink);
-  cursor: pointer;
-}
-.pager button:disabled {
-  opacity: .5;
-  cursor: default;
+  justify-content: center;
 }
 
 /* ============================================================
-   FOOTER
+   (remove old profile-header overrides)
    ============================================================ */
-.footer {
-  margin-top: 3rem;
-  padding: 1rem;
-  text-align: center;
-  border-top: 1px solid var(--field-border);
-  color: var(--muted);
-}
-.footer a {
-  color: var(--accent);
-}
-
-/* ============================================================
-   FORMS / INPUTS
-   ============================================================ */
-input, textarea, select {
-  background: var(--field);
-  color: var(--ink);
-  border: 1px solid var(--field-border);
-  padding: .5rem;
-  border-radius: 4px;
-  font: inherit;
-}
-input:focus, textarea:focus, select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
-  outline: none;
-}
-button {
-  font: inherit;
-  cursor: pointer;
-}
-
-/* ============================================================
-   BUTTONS
-   ============================================================ */
-.btn {
-  display: inline-block;
-  padding: .5rem 1rem;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  text-align: center;
-}
-.btn.primary {
-  background: var(--accent-fill);
-  color: #fff;
-  border-color: var(--accent-fill);
-}
-.btn.ghost {
-  background: transparent;
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.btn.accent-ink {
-  background: var(--accent);
-  color: #000;
-}
-
-/* ============================================================
-   FOCUS / SELECTION
-   ============================================================ */
-:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-::selection {
-  background: var(--accent);
-  color: #fff;
-}
-input, textarea {
-  caret-color: var(--accent);
-}
-
-/* ============================================================
-   MARKDOWN STYLES
-   ============================================================ */
-.tweet__text :where(h1,h2,h3) {
-  margin: .6em 0 .3em;
-  font-weight: 700;
-  font-size: 1.1em;
-}
-.tweet__text p {
-  margin: .5em 0;
-}
-.tweet__text code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: .95em;
-  padding: .15em .3em;
-  border: 1px solid var(--field-border);
-  background: var(--field);
-  border-radius: 3px;
-}
-.tweet__text pre {
-  padding: .75rem;
-  overflow: auto;
-  border: 1px solid var(--field-border);
-  background: var(--field);
-  border-radius: 4px;
-}
-.tweet__text ul,
-.tweet__text ol {
-  margin: .5em 0 .5em 1.25em;
-}
-.tweet__text blockquote {
-  margin: .6em 0;
-  padding-left: .75em;
-  border-left: 3px solid var(--accent);
-  color: var(--muted);
-}
-
-/* ============================================================
-   ADMIN / UTILITY CLASSES (shared)
-   ============================================================ */
-.container{
-  max-width: 960px;
-  margin: 2rem auto;
-  padding: 1rem;
-}
-.grid-2{
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: 1fr 1fr;
-}
-.flex-between{
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-.card{
-  border: 1px solid var(--field-border);
-  padding: 1rem;
-  border-radius: 4px;
-  background: var(--field);
-}
 /* Top nav pinned to the very top */
 .site-nav--top { border-bottom: 1px solid var(--field-border); }
 
-/* Profile header: short banner + avatar overlap */
-.profile-header { position: relative; margin-bottom: 2.25rem; }
-.profile-header .banner { position: relative; width: 100%; height: 160px; overflow: hidden; }
-@media (min-width: 1200px){ .profile-header .banner { height: 180px; } }
-.profile-header .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-.profile-header__inner {
-  max-width: var(--container, 900px);
-  margin: 0 auto;
-  padding: 0 1rem;
-  position: relative;
-}
-
-/* Overlapping avatar */
-.avatar--overlap {
-  width: 112px;
-  height: 112px;
-  border-radius: 9999px;
-  object-fit: cover;
-  position: absolute;
-  left: 1rem;
-  bottom: -56px; /* half of avatar height → overlap ~50% */
-  box-shadow: 0 0 0 4px var(--bg); /* halo cutout */
-}
-
-/* Space so text clears the avatar */
-.profile-header .hero-meta {
-  padding-top: 72px;
-  margin-left: calc(1rem + 120px);
-}
-@media (min-width: 700px){
-  .profile-header .hero-meta { margin-left: 0; padding-left: 140px; }
-}
-
-/* Social row tidy */
-.hero-meta .social ul { display: flex; gap: .75rem; padding: 0; margin: .5rem 0 0; list-style: none; }
+/* DELETE any previous .profile-header*, .avatar--overlap, and
+   .profile-header .hero-meta rules if they still exist */
