@@ -1,53 +1,51 @@
+// functions/api/post.ts
+// Inserts a note if the user has a valid wa_session cookie.
+// Requires Supabase RLS on notes to allow inserts only via service role.
+
 export const onRequestPost: PagesFunction = async (ctx) => {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = ctx.env as any;
+  const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
 
-  // Require passkey login: cookie set by /webauthn/login/verify
-  const hasSession = /(?:^|;\s*)admin=1(?:;|$)/.test(ctx.request.headers.get('Cookie') || '');
-  if (!hasSession) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // Require env
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE) {
+    return json({ error: 'missing_env' }, 500);
   }
 
-  // Parse body
-  let payload: any;
   try {
-    payload = await ctx.request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'invalid_json' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-  const body = typeof payload?.body === 'string' ? payload.body.trim() : '';
-  if (!body) {
-    return new Response(JSON.stringify({ error: 'body_required' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+    // 1) Check session cookie set by login verify
+    const cookie = ctx.request.headers.get('Cookie') || '';
+    const jar = Object.fromEntries(cookie.split(';').map(p => p.trim().split('=')));
+    const username = (jar['wa_session'] || '').toLowerCase();
+    if (!username) return json({ error: 'unauthorized' }, 401);
 
-  // Create id and insert
-  const id = 'note-' + Date.now().toString(36);
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-    },
-    body: JSON.stringify({ id, body }),
-  });
+    // 2) Parse body
+    const { body } = await ctx.request.json();
+    const text = String(body || '').trim();
+    if (!text) return json({ error: 'empty' }, 400);
 
-  const text = await res.text();
-  if (!res.ok) {
-    return new Response(JSON.stringify({ error: 'supabase_insert_failed', status: res.status, body: text }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+    // 3) Insert note with SERVICE_ROLE
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SERVICE_ROLE}`, // service role to bypass RLS
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify({ body: text, username })
     });
-  }
 
-  return new Response(text, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) {
+      const t = await res.text();
+      return json({ error: `insert ${res.status}`, detail: t }, 500);
+    }
+
+    const row = (await res.json())[0];
+    return json({ ok: true, note: row });
+  } catch (e: any) {
+    return json({ error: String(e) }, 500);
+  }
 };
+
+function json(obj: unknown, status = 200) {
+  return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
+}
