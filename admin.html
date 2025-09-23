@@ -129,7 +129,7 @@ function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='str
 function getDefaultApiBase(){
   const ls = localStorage.getItem('API_BASE');
   if (ls) return ls;
-  return 'https://website-rt3.pages.dev/api'; // Pages Functions default
+  return window.location.origin; // functions are at /webauthn/* (no /api prefix)
 }
 let API_BASE = getDefaultApiBase();
 function setApiBase(v){ API_BASE = v.replace(/\/$/,''); localStorage.setItem('API_BASE', API_BASE); renderApiBase(); }
@@ -303,7 +303,7 @@ function bufToB64url(buf){
    WebAuthn endpoint resolver (handles 405/404 variants)
    ============================================================ */
 // Try multiple bases and shapes. Return raw JSON plus which URL worked.
-const TRY_BASES = ['/webauthn', '/auth']; // adjust if your CF Pages functions folder differs
+const TRY_BASES = ['/webauthn']; // your repo has functions/webauthn/* // adjust if your CF Pages functions folder differs
 async function waOptions(flow /* 'register'|'login' */, payload) {
   const attempts = [];
   for (const base of TRY_BASES) {
