@@ -172,10 +172,11 @@
     newer.addEventListener('click', ()=>{ if(page>0){ page--; render(); }});
     older.addEventListener('click', ()=>{ if((page+1)*pageSize < notes.length){ page++; render(); }});
 
-    await load();
+        await load();
   }());
+</script>
 
- <!-- ===== Theme: auto by local clock (no geo) ===== -->
+<!-- ===== Theme: auto by local clock (no geo) ===== -->
 <script>
 (function () {
   const LIGHT_START_H = 7;   // 07:00 local
@@ -195,7 +196,7 @@
     meta.setAttribute('content', bg);
   }
 
-  applyThemeByClock();                  // initial
+  applyThemeByClock();                       // initial
   setInterval(applyThemeByClock, 15*60*1000); // update every 15 min
 })();
   
