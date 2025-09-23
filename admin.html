@@ -366,24 +366,14 @@ $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
 const postsBox = $('#posts-list');
 const showHidden = $('#show-hidden');
 
-/* Decode helper (more aggressive) */
-function tryDecodeBody(s){
-  if (typeof s !== 'string') return s;
-  const clean = s.trim();
-  // If it already looks like readable text, keep it.
-  if (/[A-Za-z]/.test(clean) && /\s/.test(clean) && !/^[A-Za-z0-9+/_=-]+$/.test(clean)) return s;
-  const decodeB64 = (v) => {
-    try{
-      const b64 = v.replace(/-/g,'+').replace(/_/g,'/');
-      const bin = atob(b64);
-      return new TextDecoder().decode(Uint8Array.from(bin, c=>c.charCodeAt(0)));
-    }catch{ return null; }
-  };
-  const d = decodeB64(clean);
-  return d ?? s;
+/* Markdown → HTML (same as frontend) */
+function md(html){
+  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+  const out = marked.parse(html || "");
+  return DOMPurify.sanitize(out, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
 }
 
-/* CREATE */
+/* API helpers */
 async function notesCreate(payload){
   return api('/api/post', {
     method:'POST',
@@ -391,43 +381,32 @@ async function notesCreate(payload){
     body: JSON.stringify(payload)
   });
 }
-
-/* LIST: respect Show hidden checkbox */
 async function notesList(all){
   const qs = all ? '?all=1' : '';
-  // Try public API first, then /notes
   try { return await api(`/api/notes${qs}`); } catch {}
   return await api(`/notes${qs}`);
 }
-
-/* PATCH (hide/unhide) */
 async function notesPatch(id, body){
   const tries = [
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'PATCH', body },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'PATCH', body },
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'update', ...body } },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'update', ...body } },
+    { url: `/notes/${encodeURIComponent(id)}`, method:'PATCH', body },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'PATCH', body },
+    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body: { action:'update', ...body } },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body: { action:'update', ...body } },
   ];
   let lastErr;
   for (const t of tries){
     try{
-      return await api(t.url, {
-        method: t.method,
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify(t.body)
-      });
+      return await api(t.url, { method:t.method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
     }catch(e){ lastErr = e; }
   }
   throw lastErr || new Error('Patch failed');
 }
-
-/* DELETE */
 async function notesDelete(id){
   const tries = [
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
-    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'delete' } },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'delete' } },
+    { url: `/notes/${encodeURIComponent(id)}`, method:'DELETE' },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'DELETE' },
+    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
   ];
   let lastErr;
   for (const t of tries){
@@ -441,40 +420,58 @@ async function notesDelete(id){
   throw lastErr || new Error('Delete failed');
 }
 
-/* Toggle must exist before renderPosts */
+/* Toggle */
 async function toggleHidden(id, makeHidden){
   return notesPatch(id, { is_hidden: !!makeHidden });
 }
 
-/* Render list */
+/* Mirror frontend card exactly. Hidden → strikethrough + muted + “Unhide”. */
 function renderPosts(notes){
   if (!postsBox) return;
-  const visible = showHidden?.checked ? notes : notes.filter(n => !n.is_hidden);
-  if (!visible.length){
+  const list = showHidden?.checked ? notes : notes.filter(n => !n.is_hidden);
+  if (!list.length){
     postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
     return;
   }
 
-  const rows = visible.map(n=>{
+  const rows = list.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
-    const decoded = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
-    // mirror feed: show full decoded body line
+    const hidden = !!n.is_hidden;
+    const hiddenStyle = hidden ? 'opacity:.6;text-decoration:line-through;color:var(--muted)' : '';
+    const btnLabel = hidden ? 'Unhide' : 'Hide';
+
     return `
-      <div style="display:flex;gap:.75rem;align-items:center;padding:.6rem 1rem;border-top:1px solid var(--field-border)">
-        <div style="flex:1;overflow:hidden">
-          <div><strong>${n.id}</strong></div>
-          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when} · ${n.tz || ''}</div>
-          ${decoded ? `<div style="margin-top:.25rem">${decoded}</div>` : ''}
-          ${n.is_hidden ? '<div class="muted" style="margin-top:.25rem">Hidden</div>' : ''}
+      <article class="tweet expanded" id="${n.id}" style="border-top:1px solid var(--field-border)">
+        <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+        <div class="tweet__body">
+          <header class="tweet__head">
+            <span class="name">Levi Carver</span>
+            <span class="dot" aria-hidden="true">·</span>
+            <time datetime="${n.created_at}">${when}</time>
+          </header>
+          <div class="tweet__text" style="${hiddenStyle}">${md(n.body)}</div>
+          <div class="tweet__actions" style="display:flex;gap:.5rem">
+            <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${hidden?1:0}">${btnLabel}</button>
+            <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
+            <a class="permalink" href="notes/${n.id}" aria-label="Permalink" style="margin-left:auto">Permalink</a>
+          </div>
         </div>
-        <div style="display:flex;gap:.5rem">
-          <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">${n.is_hidden?'Unhide':'Hide'}</button>
-          <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
-        </div>
-      </div>`;
+      </article>`;
   }).join('');
   postsBox.innerHTML = rows;
 
+  // link safety inside rendered markdown
+  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+
+  // card expand/collapse like frontend
+  postsBox.querySelectorAll('.tweet').forEach(card=>{
+    card.addEventListener('click', (ev)=>{
+      if (ev.target.closest('a,button')) return;
+      card.classList.toggle('expanded');
+    });
+  });
+
+  // actions
   postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
@@ -483,7 +480,6 @@ function renderPosts(notes){
       catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
     });
   });
-
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
