@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin · New Note</title>
+  <title>Admin · Notes</title>
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
+  <!-- Early theme -->
   <script>
     (function(){
       var t = localStorage.getItem('theme') || 'auto';
@@ -17,13 +18,14 @@
     })();
   </script>
 
+  <!-- Markdown + Sanitizer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
 <body>
 <main class="container">
   <header class="flex-between">
-    <h1>New Note</h1>
+    <h1>Admin</h1>
     <label class="muted">
       Theme:
       <select id="theme-select">
@@ -34,57 +36,84 @@
     </label>
   </header>
 
-  <form id="note-form" class="grid-2">
-    <label>
-      <span>Markdown</span>
-      <textarea id="body" rows="22" placeholder="Write Markdown…"></textarea>
-    </label>
-
-    <section>
-      <header class="muted">Preview</header>
-      <article id="preview" class="tweet__text card"></article>
-    </section>
-
-    <label>
-      <span class="muted">Created at</span>
-      <input id="created_at" type="datetime-local">
-    </label>
-
-    <div>
-      <button type="submit" class="btn primary">Save</button>
+  <!-- Auth controls -->
+  <section class="card" style="margin-bottom:1rem">
+    <h2 style="margin-top:0">Authentication</h2>
+    <p class="muted" style="margin:.25rem 0 1rem">
+      Use a passkey to sign in. Registration is one-time.
+    </p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button id="btn-register" class="btn ghost">Register Passkey</button>
+      <button id="btn-login" class="btn primary">Sign in with Passkey</button>
+      <button id="btn-logout" class="btn ghost">Sign out</button>
+      <span id="auth-state" class="muted" style="align-self:center"></span>
     </div>
-  </form>
+  </section>
+
+  <!-- Composer -->
+  <section class="card" id="composer" style="margin-bottom:1rem; display:none">
+    <h2 style="margin-top:0">New Note</h2>
+    <form id="note-form" class="grid-2">
+      <label>
+        <span>Markdown</span>
+        <textarea id="body" rows="18" placeholder="Write Markdown…"></textarea>
+      </label>
+
+      <section>
+        <header class="muted">Preview</header>
+        <article id="preview" class="tweet__text card" style="min-height:18rem"></article>
+      </section>
+
+      <!-- Auto timestamp: UTC + IANA tz -->
+      <div class="muted" style="grid-column:1 / -1">
+        Timestamp is set on save using your local time zone and ISO UTC.
+      </div>
+
+      <div>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Debug -->
+  <section class="card">
+    <h2 style="margin-top:0">Debug</h2>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+      <button id="dbg-ping" class="btn ghost">Ping API</button>
+      <button id="dbg-session" class="btn ghost">Show Session</button>
+      <button id="dbg-clear" class="btn ghost">Clear Log</button>
+    </div>
+    <textarea id="debug" rows="10" class="card" style="width:100%;background:var(--field)"></textarea>
+  </section>
 </main>
 
 <script>
-  // Markdown preview
+  // ---------- Markdown live preview ----------
   const bodyEl = document.getElementById('body');
   const previewEl = document.getElementById('preview');
   function renderPreview(){
     marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-    const html = marked.parse(bodyEl.value || "");
-    previewEl.innerHTML = DOMPurify.sanitize(html, {
-      ADD_ATTR:['target','rel'],
-      FORBID_TAGS:['script','style']
-    });
-    previewEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+    const html = marked.parse(bodyEl?.value || "");
+    if (previewEl) {
+      previewEl.innerHTML = DOMPurify.sanitize(html, {
+        ADD_ATTR:['target','rel'],
+        FORBID_TAGS:['script','style']
+      });
+      previewEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+    }
   }
-  bodyEl.addEventListener('input', renderPreview);
-  document.addEventListener('DOMContentLoaded', renderPreview);
-
-  // Example submit (replace with your API)
-  document.getElementById('note-form').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const payload = {
-      body: bodyEl.value,
-      created_at: new Date(document.getElementById('created_at').value || Date.now()).toISOString()
-    };
-    // Replace with your endpoint:
-    // await fetch('/api/notes', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-    alert('Would POST:\n' + JSON.stringify(payload, null, 2));
+  document.addEventListener('DOMContentLoaded', () => {
+    if (bodyEl) {
+      bodyEl.addEventListener('input', renderPreview);
+      renderPreview();
+    }
   });
 
-  // Theme engine (same as site)
+  // ---------- Minimal logger ----------
+  const dbg = document.getElementById('debug');
+  function log(...args){ if(dbg){ dbg.value += args.map(v=> typeof v==='string'? v : JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; } }
+
+  // ---------- Theme control ----------
   (function () {
     const CONFIG = { lat: 34.0522, lon: -118.2437 };
     const STORAGE_KEY = "theme";
@@ -144,7 +173,6 @@
     const saved = localStorage.getItem(STORAGE_KEY) || "auto";
     applyTheme(saved);
     if (selectEl) selectEl.value = saved;
-
     if (window.matchMedia) {
       window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
         if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
@@ -153,17 +181,181 @@
     setInterval(() => {
       if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
     }, 60*60*1000);
-
     if (selectEl) {
       selectEl.addEventListener("change", (e) => {
-        const value = e.target.value;
-        localStorage.setItem(STORAGE_KEY, value);
-        applyTheme(value);
+        const value = e.target.value; localStorage.setItem(STORAGE_KEY, value); applyTheme(value);
       });
     }
-    window.Theme = { get: () => localStorage.getItem(STORAGE_KEY) || "auto",
-                     set: (mode) => { localStorage.setItem(STORAGE_KEY, mode); applyTheme(mode); } };
   })();
+
+  // ---------- Passkey (WebAuthn) + session ----------
+  // Expected backend routes (replace as needed):
+  // POST /api/auth/register/options     -> { publicKey: {...} }
+  // POST /api/auth/register/verify      -> { ok:true }
+  // POST /api/auth/login/options        -> { publicKey: {...} }
+  // POST /api/auth/login/verify         -> { ok:true, token:"...", user:{...} }
+  // GET  /api/ping                      -> { ok:true, now:... }
+  // POST /api/notes (Authorization: Bearer <token>)
+  const $ = (sel) => document.querySelector(sel);
+  const UI = {
+    composer: $('#composer'),
+    authState: $('#auth-state'),
+    btnRegister: $('#btn-register'),
+    btnLogin: $('#btn-login'),
+    btnLogout: $('#btn-logout')
+  };
+  const SESSION_KEY = 'admin_token';
+
+  function b64urlToBuf(b64url){
+    const pad = '='.repeat((4 - b64url.length % 4) % 4);
+    const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad;
+    const raw = atob(b64);
+    const buf = new ArrayBuffer(raw.length);
+    const view = new Uint8Array(buf);
+    for (let i=0;i<raw.length;i++) view[i] = raw.charCodeAt(i);
+    return buf;
+  }
+  function bufToB64url(buf){
+    const bytes = new Uint8Array(buf);
+    let bin = ''; for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+
+  function setSession(token){
+    if (token) localStorage.setItem(SESSION_KEY, token);
+    else localStorage.removeItem(SESSION_KEY);
+    refreshAuthUI();
+  }
+  function getSession(){ return localStorage.getItem(SESSION_KEY) || null; }
+
+  function refreshAuthUI(){
+    const authed = !!getSession();
+    UI.composer.style.display = authed ? 'block' : 'none';
+    UI.authState.textContent = authed ? 'Signed in' : 'Signed out';
+  }
+
+  async function passkeyRegister(){
+    try{
+      const r1 = await fetch('/api/auth/register/options', {method:'POST'});
+      if (!r1.ok) throw new Error('register/options failed');
+      const { publicKey } = await r1.json();
+
+      // Decode binary fields
+      publicKey.challenge = b64urlToBuf(publicKey.challenge);
+      if (publicKey.user && publicKey.user.id) publicKey.user.id = b64urlToBuf(publicKey.user.id);
+      if (publicKey.excludeCredentials) {
+        publicKey.excludeCredentials = publicKey.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+      }
+
+      const cred = await navigator.credentials.create({ publicKey });
+      const attObj = cred.response.attestationObject;
+      const clientDataJSON = cred.response.clientDataJSON;
+
+      const r2 = await fetch('/api/auth/register/verify', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          id: cred.id,
+          rawId: bufToB64url(cred.rawId),
+          type: cred.type,
+          response: {
+            attestationObject: bufToB64url(attObj),
+            clientDataJSON: bufToB64url(clientDataJSON)
+          }
+        })
+      });
+      const out = await r2.json();
+      log('register/verify →', out);
+      if (!r2.ok || !out.ok) throw new Error('Registration verify failed');
+      alert('Passkey registered.');
+    }catch(err){ log('register error:', err.message || err); alert('Register failed'); }
+  }
+
+  async function passkeyLogin(){
+    try{
+      const r1 = await fetch('/api/auth/login/options', {method:'POST'});
+      if (!r1.ok) throw new Error('login/options failed');
+      const { publicKey } = await r1.json();
+
+      // Decode
+      publicKey.challenge = b64urlToBuf(publicKey.challenge);
+      if (publicKey.allowCredentials) {
+        publicKey.allowCredentials = publicKey.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+      }
+
+      const cred = await navigator.credentials.get({ publicKey });
+      const authData = cred.response.authenticatorData;
+      const clientDataJSON = cred.response.clientDataJSON;
+      const sig = cred.response.signature;
+      const userHandle = cred.response.userHandle;
+
+      const r2 = await fetch('/api/auth/login/verify', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          id: cred.id,
+          rawId: bufToB64url(cred.rawId),
+          type: cred.type,
+          response: {
+            authenticatorData: bufToB64url(authData),
+            clientDataJSON: bufToB64url(clientDataJSON),
+            signature: bufToB64url(sig),
+            userHandle: userHandle ? bufToB64url(userHandle) : null
+          }
+        })
+      });
+      const out = await r2.json();
+      log('login/verify →', out);
+      if (!r2.ok || !out.ok || !out.token) throw new Error('Login verify failed');
+      setSession(out.token);
+    }catch(err){ log('login error:', err.message || err); alert('Login failed'); }
+  }
+
+  // Wire auth buttons
+  UI.btnRegister?.addEventListener('click', passkeyRegister);
+  UI.btnLogin?.addEventListener('click', passkeyLogin);
+  UI.btnLogout?.addEventListener('click', ()=> setSession(null));
+  refreshAuthUI();
+
+  // ---------- Debug buttons ----------
+  $('#dbg-ping')?.addEventListener('click', async ()=>{
+    try{
+      const r = await fetch('/api/ping', { headers:{ 'Authorization': getSession()? `Bearer ${getSession()}` : '' } });
+      const j = await r.json();
+      log('ping →', j);
+    }catch(e){ log('ping error →', e?.message || e); }
+  });
+  $('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession() }));
+  $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
+
+  // ---------- Save handler ----------
+  document.getElementById('note-form')?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const token = getSession();
+    if (!token) { alert('Sign in first.'); return; }
+
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const createdUtc = new Date().toISOString(); // canonical UTC
+    const payload = {
+      body: bodyEl.value,
+      created_at: createdUtc,     // store UTC ISO
+      tz: tz                      // store IANA tz for display
+    };
+
+    try{
+      const r = await fetch('/api/notes', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      log('save →', j);
+      if (!r.ok) throw new Error('Save failed');
+      alert('Saved.');
+      bodyEl.value = '';
+      renderPreview();
+    }catch(err){ log('save error:', err?.message || err); alert('Save failed'); }
+  });
 </script>
 </body>
 </html>
