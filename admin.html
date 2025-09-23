@@ -363,27 +363,69 @@ $('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: ge
 $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
 
 /* ===== Notes ===== */
-const postsBox = $('#posts-list'); const showHidden = $('#show-hidden');
-$('#btn-reload')?.addEventListener('click', loadPosts);
-showHidden?.addEventListener('change', ()=> renderPosts(window.__NOTES || []));
-$('#note-form')?.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const payload = { body: ($('#body')?.value || ''), created_at: new Date().toISOString(), tz };
-  try{
-    await notesCreate(payload);
-    alert('POSTED.');
-    $('#body').value = ''; renderPreview();
-    await loadPosts();
-  }catch(err){ log('save error:', err?.message || err); alert('Post failed'); }
-});
-async function loadPosts(){
-  try{
-    const notes = await notesList();
-    window.__NOTES = Array.isArray(notes) ? notes : [];
-    renderPosts(window.__NOTES);
-  }catch(e){ log('load posts error →', e?.message || e); postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>'; }
+const postsBox = $('#posts-list');
+const showHidden = $('#show-hidden');
+
+/* CREATE */
+async function notesCreate(payload){
+  return api('/api/post', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(payload)
+  });
 }
+/* LIST */
+async function notesList(){
+  return api('/api/notes', { method:'GET' });
+}
+/* PATCH with fallbacks */
+async function notesPatch(id, body){
+  const tries = [
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'PATCH', body },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'PATCH', body },
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'update', ...body } },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'update', ...body } },
+  ];
+  let lastErr;
+  for (const t of tries){
+    try{
+      return await api(t.url, {
+        method: t.method,
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(t.body)
+      });
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Patch failed');
+}
+/* DELETE with fallbacks */
+async function notesDelete(id){
+  const tries = [
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'delete' } },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', body: { action:'delete' } },
+  ];
+  let lastErr;
+  for (const t of tries){
+    try{
+      if (t.method === 'POST') {
+        return await api(t.url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
+      }
+      return await api(t.url, { method:t.method });
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Delete failed');
+}
+
+/* Decode helper already defined above as tryDecodeBody(s) */
+
+/* TOGGLE must be defined BEFORE renderPosts */
+async function toggleHidden(id, makeHidden){
+  return notesPatch(id, { is_hidden: !!makeHidden });
+}
+
+/* Render list + wire buttons */
 function renderPosts(notes){
   if (!postsBox) return;
   const visible = showHidden?.checked ? notes : notes.filter(n => !n.is_hidden);
@@ -431,6 +473,31 @@ function renderPosts(notes){
   });
 }
 
+/* Wire controls for this section */
+$('#btn-reload')?.addEventListener('click', loadPosts);
+showHidden?.addEventListener('change', ()=> renderPosts(window.__NOTES || []));
+$('#note-form')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const payload = { body: ($('#body')?.value || ''), created_at: new Date().toISOString(), tz };
+  try{
+    await notesCreate(payload);
+    alert('POSTED.');
+    $('#body').value = ''; renderPreview();
+    await loadPosts();
+  }catch(err){ log('save error:', err?.message || err); alert('Post failed'); }
+});
+async function loadPosts(){
+  try{
+    const notes = await notesList();
+    window.__NOTES = Array.isArray(notes) ? notes : [];
+    renderPosts(window.__NOTES);
+  }catch(e){
+    log('load posts error →', e?.message || e);
+    postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>';
+  }
+}
+  
 /* ===== Init ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI(); renderSavedUsers(); await loadPosts();
