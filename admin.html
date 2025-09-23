@@ -5,18 +5,27 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Admin · Passkey + Post</title>
   <style>
-    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;max-width:720px;margin:40px auto;padding:0 16px}
+    :root { --ok:#0a0; --err:#b00; --muted:#666; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px}
     h1{font-size:1.4rem;margin:0 0 12px}
     section{border:1px solid #ddd;border-radius:10px;padding:16px;margin:18px 0}
     button,input,textarea{font:inherit}
     input,textarea{width:100%;padding:10px;border:1px solid #bbb;border-radius:8px}
     .row{display:flex;gap:8px;align-items:center}
     .row > *{flex:1}
-    .ok{color:#0a0}
-    .err{color:#b00}
-    .muted{color:#666}
-    .hide{display:none}
-    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace}
+    .ok{color:var(--ok)}
+    .err{color:var(--err)}
+    .muted{color:var(--muted)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    .btn-row{display:flex;gap:8px}
+    /* spinner */
+    .spinner{display:inline-block;width:16px;height:16px;border:2px solid #999;border-top-color:transparent;border-radius:50%;vertical-align:-3px;animation:spin 0.7s linear infinite;margin-left:8px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    /* toast */
+    .toast{position:fixed;right:16px;bottom:16px;max-width:340px;padding:10px 12px;border-radius:8px;background:#111;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25);display:none}
+    .toast.show{display:block}
+    .toast.ok{background:#0a6}
+    .toast.err{background:#c33}
   </style>
 </head>
 <body>
@@ -29,7 +38,7 @@
       <input id="reg-username" placeholder="username" value="levi" />
       <button id="btn-register">Register</button>
     </div>
-    <p id="reg-status" class="muted"></p>
+    <p id="reg-status" class="muted" aria-live="polite"></p>
   </section>
 
   <section>
@@ -38,17 +47,17 @@
       <input id="login-username" placeholder="username" value="levi" />
       <button id="btn-login">Sign in</button>
     </div>
-    <p id="login-status" class="muted"></p>
+    <p id="login-status" class="muted" aria-live="polite"></p>
   </section>
 
   <section>
     <h2>3) Publish note</h2>
     <textarea id="post-body" rows="4" placeholder="Write something..."></textarea>
-    <div class="row" style="margin-top:8px">
+    <div class="btn-row" style="margin-top:8px">
       <button id="btn-post">Publish</button>
       <button id="btn-check" type="button">Check session</button>
     </div>
-    <p id="post-status" class="muted"></p>
+    <p id="post-status" class="muted" aria-live="polite"></p>
   </section>
 
   <section>
@@ -56,38 +65,56 @@
     <pre id="out" class="mono muted" style="white-space:pre-wrap"></pre>
   </section>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <script>
-const out = (id, text, cls='muted') => {
+/* ---------- helpers ---------- */
+const setStatus = (id, text, cls='muted', spinning=false) => {
   const el = document.getElementById(id);
-  el.textContent = text;
   el.className = cls;
+  el.textContent = text;
+  if (spinning) {
+    const s = document.createElement('span'); s.className='spinner';
+    el.appendChild(s);
+  }
+};
+const showToast = (text, ok=false) => {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.className = 'toast show ' + (ok ? 'ok' : 'err');
+  clearTimeout(showToast._h); showToast._h = setTimeout(()=>{ t.className='toast'; }, 2800);
 };
 const j = x => JSON.stringify(x, null, 2);
+
+/* base64url <-> bytes for WebAuthn */
 const b64uToArray = (b64u) => Uint8Array.from(atob(b64u.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
 const arrayToB64u = (arr) => btoa(String.fromCharCode(...new Uint8Array(arr))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 
-// ---------- Register ----------
-document.getElementById('btn-register').addEventListener('click', async () => {
-  const username = document.getElementById('reg-username').value.trim().toLowerCase();
-  out('reg-status', 'Starting registration…');
-  try {
-    // 1) get options
-    const optRes = await fetch(`/webauthn/register/options?username=${encodeURIComponent(username)}`);
-    if (!optRes.ok) throw new Error('options failed');
-    const opts = await optRes.json();
+/* disable/enable buttons during async */
+const lock = (btn, on=true) => { btn.disabled = on; if(on) btn.dataset._label = btn.textContent, btn.textContent='Working…'; else btn.textContent=btn.dataset._label||btn.textContent; };
 
-    // transform for WebAuthn API
+/* ---------- Register ---------- */
+document.getElementById('btn-register').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const username = document.getElementById('reg-username').value.trim().toLowerCase();
+  if (!username) { showToast('Enter username', false); return; }
+  setStatus('reg-status','Starting registration…','muted',true); lock(btn,true);
+  try {
+    const optRes = await fetch(`/webauthn/register/options?username=${encodeURIComponent(username)}`);
+    const text = await optRes.text();
+    let opts;
+    try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
+    if (!optRes.ok) throw new Error(opts.error || 'options failed');
+
     opts.challenge = b64uToArray(opts.challenge);
     opts.user.id = b64uToArray(opts.user.id);
     if (Array.isArray(opts.excludeCredentials)) {
       opts.excludeCredentials = opts.excludeCredentials.map(c => ({ ...c, id: b64uToArray(c.id) }));
     }
 
-    // 2) create
     const cred = await navigator.credentials.create({ publicKey: opts });
     const att = cred.response;
 
-    // 3) send to server
     const payload = {
       id: cred.id,
       rawId: arrayToB64u(cred.rawId),
@@ -97,40 +124,45 @@ document.getElementById('btn-register').addEventListener('click', async () => {
         attestationObject: arrayToB64u(att.attestationObject)
       }
     };
+
     const verRes = await fetch('/webauthn/register/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const ver = await verRes.json().catch(()=>({}));
-    if (!verRes.ok) throw new Error('verify failed: ' + j(ver));
-    out('reg-status', 'Registered', 'ok');
+    const verText = await verRes.text(); let ver;
+    try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
+    if (!verRes.ok) throw new Error(ver.error || 'verify failed');
+
+    setStatus('reg-status','Registered','ok');
+    showToast('Passkey registered', true);
     document.getElementById('out').textContent = j(ver);
   } catch (err) {
-    out('reg-status', String(err), 'err');
-  }
+    setStatus('reg-status', String(err), 'err');
+    showToast('Registration failed', false);
+  } finally { lock(btn,false); }
 });
 
-// ---------- Login ----------
-document.getElementById('btn-login').addEventListener('click', async () => {
+/* ---------- Login ---------- */
+document.getElementById('btn-login').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
   const username = document.getElementById('login-username').value.trim().toLowerCase();
-  out('login-status', 'Starting sign-in…');
+  if (!username) { showToast('Enter username', false); return; }
+  setStatus('login-status','Starting sign-in…','muted',true); lock(btn,true);
   try {
-    // 1) get options
     const optRes = await fetch(`/webauthn/login/options?username=${encodeURIComponent(username)}`);
-    if (!optRes.ok) throw new Error('options failed');
-    const opts = await optRes.json();
+    const text = await optRes.text();
+    let opts;
+    try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
+    if (!optRes.ok) throw new Error(opts.error || 'options failed');
 
     opts.challenge = b64uToArray(opts.challenge);
     if (Array.isArray(opts.allowCredentials)) {
       opts.allowCredentials = opts.allowCredentials.map(c => ({ ...c, id: b64uToArray(c.id) }));
     }
 
-    // 2) get
     const cred = await navigator.credentials.get({ publicKey: opts });
     const res = cred.response;
 
-    // 3) verify
     const payload = {
       id: cred.id,
       rawId: arrayToB64u(cred.rawId),
@@ -142,48 +174,58 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         userHandle: res.userHandle ? arrayToB64u(res.userHandle) : null
       }
     };
+
     const verRes = await fetch('/webauthn/login/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const ver = await verRes.json().catch(()=>({}));
-    if (!verRes.ok) throw new Error('verify failed: ' + j(ver));
-    out('login-status', 'Signed in (cookie set)', 'ok');
+    const verText = await verRes.text(); let ver;
+    try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
+    if (!verRes.ok) throw new Error(ver.error || 'verify failed');
+
+    setStatus('login-status','Signed in (cookie set)','ok');
+    showToast('Signed in', true);
     document.getElementById('out').textContent = j(ver);
   } catch (err) {
-    out('login-status', String(err), 'err');
-  }
+    setStatus('login-status', String(err), 'err');
+    showToast('Sign-in failed', false);
+  } finally { lock(btn,false); }
 });
 
-// ---------- Post ----------
-document.getElementById('btn-post').addEventListener('click', async () => {
-  const body = document.getElementById('post-body').value.trim();
-  if (!body) { out('post-status', 'Enter text first', 'err'); return; }
-  out('post-status', 'Posting…');
+/* ---------- Post ---------- */
+document.getElementById('btn-post').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const bodyEl = document.getElementById('post-body');
+  const text = bodyEl.value.trim();
+  if (!text) { setStatus('post-status','Enter text first','err'); return; }
+  setStatus('post-status','Posting…','muted',true); lock(btn,true);
   try {
     const r = await fetch('/api/post', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: text })
     });
-    const data = await r.json().catch(()=>({}));
-    if (!r.ok) throw new Error('post failed: ' + j(data));
-    out('post-status', 'Published', 'ok');
+    const t = await r.text(); let data;
+    try { data = JSON.parse(t); } catch { data = { raw: t }; }
+    if (!r.ok || !data?.ok) throw new Error((data && (data.error||data.detail)) || 'post failed');
+
+    setStatus('post-status','Published','ok');
+    showToast('Note published', true);
+    bodyEl.value = '';
     document.getElementById('out').textContent = j(data);
   } catch (err) {
-    out('post-status', String(err), 'err');
-  }
+    setStatus('post-status', String(err), 'err');
+    showToast('Publish failed', false);
+  } finally { lock(btn,false); }
 });
 
-// ---------- Check session ----------
+/* ---------- Check session ---------- */
 document.getElementById('btn-check').addEventListener('click', async () => {
   try {
     const r = await fetch('/api/health');
     const t = await r.text();
-    out('post-status', 'Health: ' + t, r.ok ? 'ok' : 'err');
-  } catch (e) {
-    out('post-status', 'Health check failed', 'err');
+    setStatus('post-status', 'Health: ' + t, r.ok ? 'ok' : 'err');
+  } catch {
+    setStatus('post-status', 'Health check failed', 'err');
   }
 });
 </script>
