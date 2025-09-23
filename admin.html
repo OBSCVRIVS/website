@@ -386,7 +386,7 @@ async function loadPosts(){
 }
 function renderPosts(notes){
   if (!postsBox) return;
-  const visible = showHidden?.checked ? notes : notes.filter(n=>!n.hidden);
+  const visible = showHidden?.checked ? notes : notes.filter(n=>!n.is_hidden);
   if (!visible.length){ postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>'; return; }
   const rows = visible.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
@@ -398,10 +398,10 @@ function renderPosts(notes){
           <div><strong>${n.id}</strong></div>
           <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when} · ${n.tz || ''}</div>
           ${snippet ? `<div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${snippet}</div>` : ''}
-          ${n.hidden ? '<div class="muted">Hidden</div>' : ''}
+          ${n.is_hidden ? '<div class="muted">Hidden</div>' : ''}
         </div>
         <div style="display:flex;gap:.5rem">
-          <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.hidden?1:0}">${n.hidden?'Unhide':'Hide'}</button>
+          <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">${n.hidden?'Unhide':'Hide'}</button>
           <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
         </div>
       </div>`;
@@ -411,7 +411,7 @@ function renderPosts(notes){
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
       const hidden = b.getAttribute('data-hidden') === '1';
-      try{ await notesPatch(id, { hidden: !hidden }); await loadPosts(); } catch(e){ log('toggle error →', e?.message||e); alert('Post failed'); }
+      try{ await notesPatch(id, { is_hidden: !hidden }); await loadPosts(); } catch(e){ log('toggle error →', e?.message||e); alert('Post failed'); }
     });
   });
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
