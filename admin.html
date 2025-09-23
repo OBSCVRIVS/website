@@ -302,39 +302,63 @@ function bufToB64url(buf){
 /* ============================================================
    WebAuthn endpoint resolver (handles 405/404 variants)
    ============================================================ */
-async function waOptions(pathBase, payload) {
-  // Try POST .../options
-  try {
-    return await api(`${pathBase}/options`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-    });
-  } catch(e) {
-    // If 405/404, try GET .../options
-    if (String(e.message).startsWith('405') || String(e.message).startsWith('404')) {
-      try { return await api(`${pathBase}/options`, { method:'GET' }); } catch(_) {}
-      // Finally try POST base
-      return await api(`${pathBase}`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-      });
+// Try multiple bases and shapes. Return raw JSON plus which URL worked.
+const TRY_BASES = ['/webauthn', '/auth']; // adjust if your CF Pages functions folder differs
+async function waOptions(flow /* 'register'|'login' */, payload) {
+  const attempts = [];
+  for (const base of TRY_BASES) {
+    const roots = [
+      `${base}/${flow}/options`, // POST or GET
+      `${base}/${flow}`          // POST
+    ];
+    // POST .../options
+    for (const url of roots) {
+      try {
+        const res = await api(url, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        return { data: res, base, url, method:'POST' };
+      } catch (e) {
+        attempts.push(`POST ${url} → ${e.message}`);
+      }
+      // GET .../options fallback
+      if (url.endsWith('/options')) {
+        try {
+          const res = await api(url, { method:'GET' });
+          return { data: res, base, url, method:'GET' };
+        } catch (e2) {
+          attempts.push(`GET ${url} → ${e2.message}`);
+        }
+      }
     }
-    throw e;
   }
+  log('waOptions attempts:', attempts);
+  throw new Error('Could not resolve options endpoint');
 }
-async function waVerify(pathBase, payload) {
-  // Try POST .../verify
-  try {
-    return await api(`${pathBase}/verify`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-    });
-  } catch(e) {
-    if (String(e.message).startsWith('404') || String(e.message).startsWith('405')) {
-      // Some setups verify on the base path
-      return await api(`${pathBase}`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-      });
+async function waVerify(flow /* 'register'|'login' */, payload) {
+  const attempts = [];
+  for (const base of TRY_BASES) {
+    const targets = [
+      `${base}/${flow}/verify`, // POST
+      `${base}/${flow}`         // POST on base as fallback
+    ];
+    for (const url of targets) {
+      try {
+        const res = await api(url, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        return { data: res, url };
+      } catch (e) {
+        attempts.push(`POST ${url} → ${e.message}`);
+      }
     }
-    throw e;
   }
+  log('waVerify attempts:', attempts);
+  throw new Error('Could not resolve verify endpoint');
 }
 
 /* ============================================================
@@ -345,16 +369,17 @@ async function passkeyRegister(){
     const username = UI.username.value.trim();
     if (!username) { alert('Enter a username.'); return; }
 
-    const { publicKey: pk } = await waOptions('/webauthn/register', { username });
+    const { data, url } = await waOptions('register', { username });
+    const pk = data?.publicKey || data;
+    if (!pk || !pk.challenge) { log('register/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
 
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
-    if (pk.excludeCredentials) pk.excludeCredentials =
-      pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+    if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
 
     const cred = await navigator.credentials.create({ publicKey: pk });
 
-    const out = await waVerify('/webauthn/register', {
+    const { data: out, url: vurl } = await waVerify('register', {
       id: cred.id,
       rawId: bufToB64url(cred.rawId),
       type: cred.type,
@@ -363,9 +388,8 @@ async function passkeyRegister(){
         clientDataJSON: bufToB64url(cred.response.clientDataJSON)
       }
     });
-
-    log('register →', out);
-    if (!out.ok) throw new Error('Registration verify failed');
+    log('register verify @', vurl, '→', out);
+    if (!out?.ok) throw new Error('Registration verify failed');
     alert('Passkey registered.');
     saveUser(username);
   }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
@@ -375,15 +399,16 @@ async function passkeyLogin(){
   try{
     const username = UI.username.value.trim();
 
-    const { publicKey: pk } = await waOptions('/webauthn/login', { username });
+    const { data, url } = await waOptions('login', { username });
+    const pk = data?.publicKey || data;
+    if (!pk || !pk.challenge) { log('login/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
 
     pk.challenge = b64urlToBuf(pk.challenge);
-    if (pk.allowCredentials) pk.allowCredentials =
-      pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+    if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
 
     const cred = await navigator.credentials.get({ publicKey: pk });
 
-    const out = await waVerify('/webauthn/login', {
+    const { data: out, url: vurl } = await waVerify('login', {
       id: cred.id,
       rawId: bufToB64url(cred.rawId),
       type: cred.type,
@@ -394,16 +419,14 @@ async function passkeyLogin(){
         userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null
       }
     });
-
-    log('login →', out);
-    if (!out.ok || !out.token) throw new Error('Login verify failed');
+    log('login verify @', vurl, '→', out);
+    if (!out?.ok || !out?.token) throw new Error('Login verify failed');
     setSession(out.token);
     UI.authUser.textContent = out.user?.username ? `User: ${out.user.username}` : '';
     if (username) saveUser(username);
     await loadPosts();
   }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
 }
-
 /* ============================================================
    Wire buttons
    ============================================================ */
