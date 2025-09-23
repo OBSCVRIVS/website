@@ -71,7 +71,7 @@
         Timestamp set on save (UTC ISO + your IANA time zone). 24-hour time shown on site.
       </div>
       <div>
-        <button type="submit" class="btn primary">Save</button>
+        <button type="submit" class="btn primary">Post</button>
       </div>
     </form>
   </section>
@@ -214,19 +214,22 @@ function b64urlToBuf(b64url){ const pad = '='.repeat((4 - b64url.length % 4) % 4
 function bufToB64url(buf){ const bytes = new Uint8Array(buf); let bin=''; for (let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 
-/* ===== WebAuthn endpoints (root first, then /api as fallback) ===== */
+/* ===== WebAuthn endpoints (send username first) ===== */
 async function fetchJSON(url, init){ return api(url, init); }
 function addUserParam(url, username){
-  if (!username) return url;
   const u = new URL(url, ORIGIN);
-  u.searchParams.set('username', username.toLowerCase().trim());
+  if (username) u.searchParams.set('username', username.toLowerCase().trim());
   return u.pathname + u.search;
 }
 async function waOptions(flow, payload){
   const username = (UI.username?.value || '').trim();
-  try { return { data: await fetchJSON(`/webauthn/${flow}/options`, { method:'GET', headers:{}, /* your register options supports GET */ }) }; } catch {}
+  // 1) GET with ?username=...
   try { return { data: await fetchJSON(addUserParam(`/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch {}
-  try { return { data: await fetchJSON(`/api/webauthn/${flow}/options`, { method:'GET' }) }; } catch {}
+  // 2) GET under /api with ?username=...
+  try { return { data: await fetchJSON(addUserParam(`/api/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch {}
+  // 3) POST body
+  try { return { data: await fetchJSON(`/webauthn/${flow}/options`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload||{}) }) }; } catch {}
+  try { return { data: await fetchJSON(`/api/webauthn/${flow}/options`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload||{}) }) }; } catch {}
   throw new Error('No options endpoint');
 }
 async function waVerify(flow, payload){
@@ -235,7 +238,7 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes endpoints wired to your repo ===== */
+/* ===== Notes endpoints (your repo layout) ===== */
 // CREATE → POST /api/post
 async function notesCreate(payload){
   return fetchJSON('/api/post', {
@@ -261,6 +264,23 @@ async function notesDelete(id){
   return fetchJSON(`/notes/${encodeURIComponent(id)}`, { method:'DELETE' });
 }
 
+/* ===== Optional: decode base64/base64url bodies for display ===== */
+function tryDecodeBody(s){
+  if (typeof s !== 'string') return s;
+  const clean = s.trim();
+  // quick reject if obviously not base64-ish
+  if (!/^[A-Za-z0-9+/_=-]+$/.test(clean)) return s;
+  const toBytes = (val, url) => {
+    const b64 = url ? val.replace(/-/g,'+').replace(/_/g,'/') : val;
+    try{ const bin = atob(b64); return new TextDecoder().decode(Uint8Array.from(bin, c=>c.charCodeAt(0))); }catch{ return null; }
+  };
+  let out = toBytes(clean, false);
+  if (out && /^[\s\S]*$/.test(out) && /[ -~\t\r\n]/.test(out)) return out;
+  out = toBytes(clean, true);
+  if (out && /[ -~\t\r\n]/.test(out)) return out;
+  return s;
+}
+
 /* ===== Passkey flows ===== */
 async function passkeyRegister(){
   try{
@@ -276,8 +296,9 @@ async function passkeyRegister(){
       response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
     });
     if (!out?.ok) throw new Error('Registration verify failed');
-    alert('Passkey registered.'); saveUser(username);
-  }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
+    alert('POSTED.'); // reuses same minimal toast style
+    saveUser(username);
+  }catch(e){ log('register error:', e?.message || e); alert('Post failed'); }
 }
 async function passkeyLogin(){
   try{
@@ -294,7 +315,7 @@ async function passkeyLogin(){
     if (!out?.ok) throw new Error('Login verify failed');
     setSession('ok'); UI.authUser.textContent = username ? `User: ${username}` : '';
     await loadPosts();
-  }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
+  }catch(e){ log('login error:', e?.message || e); alert('Post failed'); }
 }
 
 /* ===== Wire ===== */
@@ -323,10 +344,10 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
   const payload = { body: ($('#body')?.value || ''), created_at: new Date().toISOString(), tz };
   try{
     await notesCreate(payload);
-    alert('Saved.');
+    alert('POSTED.');
     $('#body').value = ''; renderPreview();
     await loadPosts();
-  }catch(err){ log('save error:', err?.message || err); alert('Save failed'); }
+  }catch(err){ log('save error:', err?.message || err); alert('Post failed'); }
 });
 async function loadPosts(){
   try{
@@ -341,11 +362,14 @@ function renderPosts(notes){
   if (!visible.length){ postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>'; return; }
   const rows = visible.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
+    const body = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
+    const snippet = (body || '').replace(/\s+/g,' ').slice(0, 120);
     return `
       <div style="display:flex;gap:.75rem;align-items:center;padding:.6rem 1rem;border-top:1px solid var(--field-border)">
         <div style="flex:1;overflow:hidden">
           <div><strong>${n.id}</strong></div>
           <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when} · ${n.tz || ''}</div>
+          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${snippet}</div>
           ${n.hidden ? '<div class="muted">Hidden</div>' : ''}
         </div>
         <div style="display:flex;gap:.5rem">
@@ -359,14 +383,14 @@ function renderPosts(notes){
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
       const hidden = b.getAttribute('data-hidden') === '1';
-      try{ await notesPatch(id, { hidden: !hidden }); await loadPosts(); } catch(e){ log('toggle error →', e?.message||e); alert('Failed to toggle'); }
+      try{ await notesPatch(id, { hidden: !hidden }); await loadPosts(); } catch(e){ log('toggle error →', e?.message||e); alert('Post failed'); }
     });
   });
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
       if (!confirm('Delete this post?')) return;
-      try{ await notesDelete(id); await loadPosts(); } catch(e){ log('delete error →', e?.message||e); alert('Failed to delete'); }
+      try{ await notesDelete(id); await loadPosts(); } catch(e){ log('delete error →', e?.message||e); alert('Post failed'); }
     });
   });
 }
