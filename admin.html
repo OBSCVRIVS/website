@@ -41,7 +41,7 @@
     <!-- API base control -->
     <div style="margin:.5rem 0 1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
       <label class="muted">API Base:</label>
-      <input id="api-base" type="text" placeholder="/api or https://api.example.com/api" style="min-width:26rem">
+      <input id="api-base" type="text" placeholder="/api or https://domain/api" style="min-width:26rem">
       <button id="api-save" class="btn ghost" type="button">Save</button>
       <span class="muted" id="api-current"></span>
     </div>
@@ -121,13 +121,11 @@ const dbg = $('#debug');
 function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
 
 /* ===== API base + robust fetch ===== */
+/* Default to your Pages Functions base. You can override in the UI if needed. */
 function getDefaultApiBase(){
-  // Priority: localStorage -> meta -> same-origin /api
   const ls = localStorage.getItem('API_BASE');
   if (ls) return ls;
-  const meta = document.querySelector('meta[name="api-base"]')?.getAttribute('content');
-  if (meta) return meta;
-  return '/api';
+  return 'https://website-rt3.pages.dev/api';
 }
 let API_BASE = getDefaultApiBase();
 function setApiBase(v){ API_BASE = v.replace(/\/$/,''); localStorage.setItem('API_BASE', API_BASE); renderApiBase(); }
@@ -144,7 +142,6 @@ async function api(path, opts={}){
   }
   return data;
 }
-
 function renderApiBase(){
   const input = $('#api-base'), cur = $('#api-current');
   if (input) input.value = API_BASE;
@@ -164,7 +161,7 @@ function fmtLocal(iso, tz){
   return `${ds} ${ts} ${tzLabel}`;
 }
 
-/* ===== Theme engine (unchanged) ===== */
+/* ===== Theme engine ===== */
 (function () {
   const CONFIG = { lat: 34.0522, lon: -118.2437 };
   const STORAGE_KEY = "theme";
@@ -290,19 +287,19 @@ function bufToB64url(buf){
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
-/* ===== Passkey flows (using api()) ===== */
+/* ===== Passkey flows (Pages Functions use /webauthn/...) ===== */
 async function passkeyRegister(){
   try{
     const username = UI.username.value.trim();
     if (!username) { alert('Enter a username.'); return; }
-    const { publicKey: pk } = await api('/auth/register/options', {
+    const { publicKey: pk } = await api('/webauthn/register/options', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username })
     });
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
     if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
     const cred = await navigator.credentials.create({ publicKey: pk });
-    const out = await api('/auth/register/verify', {
+    const out = await api('/webauthn/register/verify', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         id: cred.id,
@@ -324,13 +321,13 @@ async function passkeyRegister(){
 async function passkeyLogin(){
   try{
     const username = UI.username.value.trim();
-    const { publicKey: pk } = await api('/auth/login/options', {
+    const { publicKey: pk } = await api('/webauthn/login/options', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username })
     });
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
     const cred = await navigator.credentials.get({ publicKey: pk });
-    const out = await api('/auth/login/verify', {
+    const out = await api('/webauthn/login/verify', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         id: cred.id,
@@ -361,7 +358,7 @@ renderSavedUsers(); refreshAuthUI();
 
 /* ===== Debug buttons ===== */
 $('#dbg-ping')?.addEventListener('click', async ()=>{
-  try{ const j = await api('/ping', { headers:{ 'Authorization': getSession()? `Bearer ${getSession()}` : '' } }); log('ping →', j); }
+  try{ const j = await api('/health'); log('ping →', j); }
   catch(e){ log('ping error →', e?.message || e); }
 });
 $('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), API_BASE }));
