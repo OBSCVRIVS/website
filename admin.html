@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
-  <!-- Early theme -->
+  <!-- Early theme to avoid flash -->
   <script>
     (function(){
       var t = localStorage.getItem('theme') || 'auto';
@@ -36,22 +36,32 @@
     </label>
   </header>
 
-  <!-- Auth controls -->
+  <!-- Auth -->
   <section class="card" style="margin-bottom:1rem">
     <h2 style="margin-top:0">Authentication</h2>
-    <p class="muted" style="margin:.25rem 0 1rem">
-      Use a passkey to sign in. Registration is one-time.
-    </p>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <button id="btn-register" class="btn ghost">Register Passkey</button>
-      <button id="btn-login" class="btn primary">Sign in with Passkey</button>
-      <button id="btn-logout" class="btn ghost">Sign out</button>
-      <span id="auth-state" class="muted" style="align-self:center"></span>
+    <div class="grid-2">
+      <div>
+        <label>
+          <span class="muted">Username</span>
+          <input id="username" type="text" placeholder="e.g. levi" autocomplete="username">
+        </label>
+        <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <button id="btn-register" class="btn ghost">Register Passkey</button>
+          <button id="btn-login" class="btn primary">Sign in with Passkey</button>
+          <button id="btn-logout" class="btn ghost">Sign out</button>
+        </div>
+        <div id="remembered" style="margin-top:.75rem"></div>
+      </div>
+      <div>
+        <div class="muted">Status</div>
+        <div id="auth-state">Signed out</div>
+        <div id="auth-user" class="muted"></div>
+      </div>
     </div>
   </section>
 
-  <!-- Composer -->
-  <section class="card" id="composer" style="margin-bottom:1rem; display:none">
+  <!-- Composer (hidden until signed in) -->
+  <section id="composer" class="card" style="margin-bottom:1rem;display:none">
     <h2 style="margin-top:0">New Note</h2>
     <form id="note-form" class="grid-2">
       <label>
@@ -64,9 +74,8 @@
         <article id="preview" class="tweet__text card" style="min-height:18rem"></article>
       </section>
 
-      <!-- Auto timestamp: UTC + IANA tz -->
-      <div class="muted" style="grid-column:1 / -1">
-        Timestamp is set on save using your local time zone and ISO UTC.
+      <div class="muted" style="grid-column:1/-1">
+        Timestamp set on save (UTC ISO + your IANA time zone). 24-hour time shown on site.
       </div>
 
       <div>
@@ -75,8 +84,24 @@
     </form>
   </section>
 
+  <!-- Posts manager (hidden until signed in) -->
+  <section id="posts" class="card" style="display:none">
+    <div class="flex-between" style="margin-bottom:.5rem">
+      <h2 style="margin:0">Posts</h2>
+      <div style="display:flex;gap:.5rem">
+        <button id="btn-reload" class="btn ghost">Reload</button>
+        <label class="muted" style="display:inline-flex;align-items:center;gap:.35rem">
+          <input id="show-hidden" type="checkbox"> Show hidden
+        </label>
+      </div>
+    </div>
+    <div id="posts-list" class="card" style="padding:0">
+      <!-- rows injected -->
+    </div>
+  </section>
+
   <!-- Debug -->
-  <section class="card">
+  <section class="card" style="margin-top:1rem">
     <h2 style="margin-top:0">Debug</h2>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
       <button id="dbg-ping" class="btn ghost">Ping API</button>
@@ -88,274 +113,380 @@
 </main>
 
 <script>
-  // ---------- Markdown live preview ----------
-  const bodyEl = document.getElementById('body');
-  const previewEl = document.getElementById('preview');
-  function renderPreview(){
-    marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-    const html = marked.parse(bodyEl?.value || "");
-    if (previewEl) {
-      previewEl.innerHTML = DOMPurify.sanitize(html, {
-        ADD_ATTR:['target','rel'],
-        FORBID_TAGS:['script','style']
-      });
-      previewEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+/* ===== Utils ===== */
+const $ = s => document.querySelector(s);
+const dbg = $('#debug');
+function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
+function fmtLocal(iso, tz){
+  const d = new Date(iso);
+  const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const ds = d.toLocaleString(undefined, { year:'numeric', month:'short', day:'2-digit', timeZone: zone });
+  const ts = d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: zone });
+  const tzLabel = new Intl.DateTimeFormat(undefined, { timeZoneName:'short', timeZone: zone })
+    .formatToParts(d).find(p=>p.type==='timeZoneName')?.value || zone;
+  return `${ds} ${ts} ${tzLabel}`;
+}
+
+/* ===== Theme engine (same as site) ===== */
+(function () {
+  const CONFIG = { lat: 34.0522, lon: -118.2437 };
+  const STORAGE_KEY = "theme";
+  const selectEl = $("#theme-select");
+
+  function sunTimes(date, lat, lon) {
+    const rad = Math.PI/180, dayMs = 86400000;
+    const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+    const J2000 = 946684800000;
+    const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
+    const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545);
+    function solNoon(){
+      const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+      const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+      const L = (M + 102.9372 + C + 180) % 360;
+      return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
     }
+    function hourAngle(){
+      const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+      const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+      const L = (M + 102.9372 + C + 180) % 360;
+      const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
+      const φ = lat*rad, h0 = (-6)*rad;
+      const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
+      if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH);
+    }
+    function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
+    const Jnoon = solNoon();
+    const H = hourAngle();
+    const Jrise = Jnoon - (H/(2*Math.PI));
+    const Jset  = Jnoon + (H/(2*Math.PI));
+    return { sunrise: jdToDate(Jrise), sunset: jdToDate(Jset) };
   }
-  document.addEventListener('DOMContentLoaded', () => {
-    if (bodyEl) {
-      bodyEl.addEventListener('input', renderPreview);
-      renderPreview();
-    }
-  });
 
-  // ---------- Minimal logger ----------
-  const dbg = document.getElementById('debug');
-  function log(...args){ if(dbg){ dbg.value += args.map(v=> typeof v==='string'? v : JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; } }
+  function isNightNow(lat, lon){
+    const now = new Date();
+    const { sunrise, sunset } = sunTimes(now, lat, lon);
+    return (now < sunrise) || (now > sunset);
+  }
+  function systemPrefersDark(){
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function applyTheme(theme){
+    const html = document.documentElement;
+    let resolved = theme;
+    if (theme === "auto") {
+      try { resolved = isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light"; }
+      catch { resolved = systemPrefersDark() ? "dark" : "light"; }
+    }
+    html.setAttribute("data-theme", resolved);
+    const bg = getComputedStyle(html).getPropertyValue("--bg").trim();
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
+    meta.setAttribute("content", bg);
+  }
 
-  // ---------- Theme control ----------
-  (function () {
-    const CONFIG = { lat: 34.0522, lon: -118.2437 };
-    const STORAGE_KEY = "theme";
-    const selectEl = document.getElementById("theme-select");
-
-    function sunTimes(date, lat, lon) {
-      const rad = Math.PI/180, dayMs = 86400000;
-      const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-      const J2000 = 946684800000;
-      const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
-      const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545);
-      function solNoon(){
-        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
-        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
-        const L = (M + 102.9372 + C + 180) % 360;
-        return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
-      }
-      function hourAngle(){
-        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
-        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
-        const L = (M + 102.9372 + C + 180) % 360;
-        const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
-        const φ = lat*rad, h0 = (-6)*rad;
-        const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
-        if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH);
-      }
-      function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
-      const Jnoon = solNoon();
-      const H = hourAngle();
-      const Jrise = Jnoon - (H/(2*Math.PI));
-      const Jset  = Jnoon + (H/(2*Math.PI));
-      return { sunrise: jdToDate(Jrise), sunset: jdToDate(Jset) };
-    }
-
-    function isNightNow(lat, lon){
-      const now = new Date();
-      const { sunrise, sunset } = sunTimes(now, lat, lon);
-      return (now < sunrise) || (now > sunset);
-    }
-    function systemPrefersDark(){
-      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    function applyTheme(theme){
-      const html = document.documentElement;
-      let resolved = theme;
-      if (theme === "auto") {
-        try { resolved = isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light"; }
-        catch { resolved = systemPrefersDark() ? "dark" : "light"; }
-      }
-      html.setAttribute("data-theme", resolved);
-      const bg = getComputedStyle(html).getPropertyValue("--bg").trim();
-      let meta = document.querySelector('meta[name="theme-color"]');
-      if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
-      meta.setAttribute("content", bg);
-    }
-
-    const saved = localStorage.getItem(STORAGE_KEY) || "auto";
-    applyTheme(saved);
-    if (selectEl) selectEl.value = saved;
-    if (window.matchMedia) {
-      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-        if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
-      });
-    }
-    setInterval(() => {
+  const saved = localStorage.getItem(STORAGE_KEY) || "auto";
+  applyTheme(saved);
+  if (selectEl) selectEl.value = saved;
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
       if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
-    }, 60*60*1000);
-    if (selectEl) {
-      selectEl.addEventListener("change", (e) => {
-        const value = e.target.value; localStorage.setItem(STORAGE_KEY, value); applyTheme(value);
-      });
-    }
-  })();
-
-  // ---------- Passkey (WebAuthn) + session ----------
-  // Expected backend routes (replace as needed):
-  // POST /api/auth/register/options     -> { publicKey: {...} }
-  // POST /api/auth/register/verify      -> { ok:true }
-  // POST /api/auth/login/options        -> { publicKey: {...} }
-  // POST /api/auth/login/verify         -> { ok:true, token:"...", user:{...} }
-  // GET  /api/ping                      -> { ok:true, now:... }
-  // POST /api/notes (Authorization: Bearer <token>)
-  const $ = (sel) => document.querySelector(sel);
-  const UI = {
-    composer: $('#composer'),
-    authState: $('#auth-state'),
-    btnRegister: $('#btn-register'),
-    btnLogin: $('#btn-login'),
-    btnLogout: $('#btn-logout')
-  };
-  const SESSION_KEY = 'admin_token';
-
-  function b64urlToBuf(b64url){
-    const pad = '='.repeat((4 - b64url.length % 4) % 4);
-    const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad;
-    const raw = atob(b64);
-    const buf = new ArrayBuffer(raw.length);
-    const view = new Uint8Array(buf);
-    for (let i=0;i<raw.length;i++) view[i] = raw.charCodeAt(i);
-    return buf;
+    });
   }
-  function bufToB64url(buf){
-    const bytes = new Uint8Array(buf);
-    let bin = ''; for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  setInterval(() => {
+    if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
+  }, 60*60*1000);
+  if (selectEl) {
+    selectEl.addEventListener("change", (e) => {
+      const value = e.target.value; localStorage.setItem(STORAGE_KEY, value); applyTheme(value);
+    });
   }
+})();
 
-  function setSession(token){
-    if (token) localStorage.setItem(SESSION_KEY, token);
-    else localStorage.removeItem(SESSION_KEY);
-    refreshAuthUI();
+/* ===== Markdown preview ===== */
+const bodyEl = $('#body');
+const previewEl = $('#preview');
+function renderPreview(){
+  if (!bodyEl || !previewEl) return;
+  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+  const html = marked.parse(bodyEl.value || "");
+  previewEl.innerHTML = DOMPurify.sanitize(html, {
+    ADD_ATTR:['target','rel'],
+    FORBID_TAGS:['script','style']
+  });
+  previewEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  if (bodyEl) { bodyEl.addEventListener('input', renderPreview); renderPreview(); }
+});
+
+/* ===== Session + auth UI ===== */
+const UI = {
+  composer: $('#composer'),
+  posts: $('#posts'),
+  authState: $('#auth-state'),
+  authUser: $('#auth-user'),
+  btnRegister: $('#btn-register'),
+  btnLogin: $('#btn-login'),
+  btnLogout: $('#btn-logout'),
+  username: $('#username'),
+  remembered: $('#remembered')
+};
+const SESSION_KEY = 'admin_token';
+const USERS_KEY = 'admin_usernames';
+
+function getSession(){ return localStorage.getItem(SESSION_KEY) || null; }
+function setSession(token){ if (token) localStorage.setItem(SESSION_KEY, token); else localStorage.removeItem(SESSION_KEY); refreshAuthUI(); }
+function getSavedUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; } }
+function saveUser(u){
+  if (!u) return;
+  const set = new Set(getSavedUsers().concat([u]));
+  localStorage.setItem(USERS_KEY, JSON.stringify([...set]));
+  renderSavedUsers();
+}
+function renderSavedUsers(){
+  const list = getSavedUsers();
+  if (!UI.remembered) return;
+  if (!list.length){ UI.remembered.innerHTML = ''; return; }
+  UI.remembered.innerHTML = '<div class="muted">Quick login:</div>' + list.map(u =>
+    `<button class="btn ghost" data-u="${u}">${u}</button>`
+  ).join(' ');
+  UI.remembered.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{ UI.username.value = b.dataset.u; passkeyLogin(); });
+  });
+}
+
+function refreshAuthUI(){
+  const authed = !!getSession();
+  if (UI.composer) UI.composer.style.display = authed ? 'block' : 'none';
+  if (UI.posts) UI.posts.style.display = authed ? 'block' : 'none';
+  if (UI.authState) UI.authState.textContent = authed ? 'Signed in' : 'Signed out';
+}
+
+/* ===== WebAuthn helpers ===== */
+function b64urlToBuf(b64url){
+  const pad = '='.repeat((4 - b64url.length % 4) % 4);
+  const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad;
+  const raw = atob(b64);
+  const buf = new ArrayBuffer(raw.length);
+  const view = new Uint8Array(buf);
+  for (let i=0;i<raw.length;i++) view[i] = raw.charCodeAt(i);
+  return buf;
+}
+function bufToB64url(buf){
+  const bytes = new Uint8Array(buf);
+  let bin = ''; for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+/* ===== API endpoints (adjust to your backend) =====
+POST /api/auth/register/options  BODY: { username }
+POST /api/auth/register/verify   BODY: { id,rawId,type,response{...} }
+POST /api/auth/login/options     BODY: { username }
+POST /api/auth/login/verify      BODY: { id,rawId,type,response{...} }
+GET  /api/me                     HEADERS: Authorization
+GET  /api/notes?all=1            HEADERS: Authorization
+PATCH /api/notes/:id             BODY: { hidden: true|false } HEADERS: Authorization
+DELETE /api/notes/:id            HEADERS: Authorization
+POST /api/notes                  BODY: { body, created_at, tz } HEADERS: Authorization
+==================================================== */
+
+/* ===== Passkey flows ===== */
+async function passkeyRegister(){
+  try{
+    const username = UI.username.value.trim();
+    if (!username) { alert('Enter a username.'); return; }
+    const o = await fetch('/api/auth/register/options', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username }) });
+    if (!o.ok) throw new Error('register/options failed');
+    const data = await o.json();
+    const pk = data.publicKey;
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
+    if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+
+    const cred = await navigator.credentials.create({ publicKey: pk });
+    const r = await fetch('/api/auth/register/verify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        id: cred.id,
+        rawId: bufToB64url(cred.rawId),
+        type: cred.type,
+        response: {
+          attestationObject: bufToB64url(cred.response.attestationObject),
+          clientDataJSON: bufToB64url(cred.response.clientDataJSON)
+        }
+      })
+    });
+    const out = await r.json(); log('register/verify →', out);
+    if (!r.ok || !out.ok) throw new Error('Registration verify failed');
+    alert('Passkey registered.');
+    saveUser(username);
+  }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
+}
+
+async function passkeyLogin(){
+  try{
+    const username = UI.username.value.trim();
+    const o = await fetch('/api/auth/login/options', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username }) });
+    if (!o.ok) throw new Error('login/options failed');
+    const data = await o.json();
+    const pk = data.publicKey;
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+
+    const cred = await navigator.credentials.get({ publicKey: pk });
+    const r = await fetch('/api/auth/login/verify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        id: cred.id,
+        rawId: bufToB64url(cred.rawId),
+        type: cred.type,
+        response: {
+          authenticatorData: bufToB64url(cred.response.authenticatorData),
+          clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+          signature: bufToB64url(cred.response.signature),
+          userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null
+        }
+      })
+    });
+    const out = await r.json(); log('login/verify →', out);
+    if (!r.ok || !out.ok || !out.token) throw new Error('Login verify failed');
+    setSession(out.token);
+    UI.authUser.textContent = out.user?.username ? `User: ${out.user.username}` : '';
+    if (username) saveUser(username);
+    await loadPosts();
+  }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
+}
+
+/* ===== Wire auth buttons ===== */
+UI.btnRegister?.addEventListener('click', passkeyRegister);
+UI.btnLogin?.addEventListener('click', passkeyLogin);
+UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
+renderSavedUsers(); refreshAuthUI();
+
+/* ===== Debug buttons ===== */
+$('#dbg-ping')?.addEventListener('click', async ()=>{
+  try{
+    const r = await fetch('/api/ping', { headers:{ 'Authorization': getSession()? `Bearer ${getSession()}` : '' } });
+    const j = await r.json();
+    log('ping →', j);
+  }catch(e){ log('ping error →', e?.message || e); }
+});
+$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession() }));
+$('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
+
+/* ===== Save note ===== */
+$('#note-form')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const token = getSession();
+  if (!token) { alert('Sign in first.'); return; }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const createdUtc = new Date().toISOString();
+  const payload = { body: bodyEl.value, created_at: createdUtc, tz };
+  try{
+    const r = await fetch('/api/notes', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json(); log('save →', j);
+    if (!r.ok) throw new Error('Save failed');
+    alert('Saved.');
+    bodyEl.value = ''; renderPreview();
+    await loadPosts();
+  }catch(err){ log('save error:', err?.message || err); alert('Save failed'); }
+});
+
+/* ===== Posts manager ===== */
+const postsBox = $('#posts-list');
+const showHidden = $('#show-hidden');
+$('#btn-reload')?.addEventListener('click', loadPosts);
+showHidden?.addEventListener('change', ()=> renderPosts(window.__NOTES || []));
+
+async function loadPosts(){
+  const token = getSession(); if (!token) return;
+  try{
+    const r = await fetch('/api/notes?all=1', { headers:{ 'Authorization': `Bearer ${token}` } });
+    const notes = await r.json();
+    window.__NOTES = Array.isArray(notes) ? notes : [];
+    renderPosts(window.__NOTES);
+  }catch(e){ log('load posts error →', e?.message || e); postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>'; }
+}
+
+function renderPosts(notes){
+  if (!postsBox) return;
+  const visible = showHidden?.checked ? notes : notes.filter(n=>!n.hidden);
+  if (!visible.length){
+    postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
+    return;
   }
-  function getSession(){ return localStorage.getItem(SESSION_KEY) || null; }
+  const rows = visible.map(n=>{
+    const when = fmtLocal(n.created_at, n.tz);
+    return `
+      <div style="display:flex;gap:.75rem;align-items:center;padding:.6rem 1rem;border-top:1px solid var(--field-border)">
+        <div style="flex:1;overflow:hidden">
+          <div><strong>${n.id}</strong></div>
+          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when} · ${n.tz || ''}</div>
+          ${n.hidden ? '<div class="muted">Hidden</div>' : ''}
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.hidden?1:0}">${n.hidden?'Unhide':'Hide'}</button>
+          <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  postsBox.innerHTML = rows;
 
-  function refreshAuthUI(){
-    const authed = !!getSession();
-    UI.composer.style.display = authed ? 'block' : 'none';
-    UI.authState.textContent = authed ? 'Signed in' : 'Signed out';
-  }
+  postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.getAttribute('data-id');
+      const hidden = b.getAttribute('data-hidden') === '1';
+      await toggleHidden(id, !hidden);
+    });
+  });
+  postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.getAttribute('data-id');
+      if (!confirm('Delete this post?')) return;
+      await deletePost(id);
+    });
+  });
+}
 
-  async function passkeyRegister(){
-    try{
-      const r1 = await fetch('/api/auth/register/options', {method:'POST'});
-      if (!r1.ok) throw new Error('register/options failed');
-      const { publicKey } = await r1.json();
+async function toggleHidden(id, makeHidden){
+  const token = getSession(); if (!token) { alert('Sign in first.'); return; }
+  try{
+    const r = await fetch(`/api/notes/${encodeURIComponent(id)}`, {
+      method:'PATCH',
+      headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ hidden: !!makeHidden })
+    });
+    const j = await r.json(); log('toggle →', j);
+    if (!r.ok) throw new Error('Toggle failed');
+    await loadPosts();
+  }catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
+}
 
-      // Decode binary fields
-      publicKey.challenge = b64urlToBuf(publicKey.challenge);
-      if (publicKey.user && publicKey.user.id) publicKey.user.id = b64urlToBuf(publicKey.user.id);
-      if (publicKey.excludeCredentials) {
-        publicKey.excludeCredentials = publicKey.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-      }
+async function deletePost(id){
+  const token = getSession(); if (!token) { alert('Sign in first.'); return; }
+  try{
+    const r = await fetch(`/api/notes/${encodeURIComponent(id)}`, {
+      method:'DELETE',
+      headers:{ 'Authorization': `Bearer ${token}` }
+    });
+    const j = await r.json().catch(()=>({}));
+    log('delete →', j);
+    if (!r.ok) throw new Error('Delete failed');
+    await loadPosts();
+  }catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
+}
 
-      const cred = await navigator.credentials.create({ publicKey });
-      const attObj = cred.response.attestationObject;
-      const clientDataJSON = cred.response.clientDataJSON;
-
-      const r2 = await fetch('/api/auth/register/verify', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          id: cred.id,
-          rawId: bufToB64url(cred.rawId),
-          type: cred.type,
-          response: {
-            attestationObject: bufToB64url(attObj),
-            clientDataJSON: bufToB64url(clientDataJSON)
-          }
-        })
-      });
-      const out = await r2.json();
-      log('register/verify →', out);
-      if (!r2.ok || !out.ok) throw new Error('Registration verify failed');
-      alert('Passkey registered.');
-    }catch(err){ log('register error:', err.message || err); alert('Register failed'); }
-  }
-
-  async function passkeyLogin(){
-    try{
-      const r1 = await fetch('/api/auth/login/options', {method:'POST'});
-      if (!r1.ok) throw new Error('login/options failed');
-      const { publicKey } = await r1.json();
-
-      // Decode
-      publicKey.challenge = b64urlToBuf(publicKey.challenge);
-      if (publicKey.allowCredentials) {
-        publicKey.allowCredentials = publicKey.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-      }
-
-      const cred = await navigator.credentials.get({ publicKey });
-      const authData = cred.response.authenticatorData;
-      const clientDataJSON = cred.response.clientDataJSON;
-      const sig = cred.response.signature;
-      const userHandle = cred.response.userHandle;
-
-      const r2 = await fetch('/api/auth/login/verify', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          id: cred.id,
-          rawId: bufToB64url(cred.rawId),
-          type: cred.type,
-          response: {
-            authenticatorData: bufToB64url(authData),
-            clientDataJSON: bufToB64url(clientDataJSON),
-            signature: bufToB64url(sig),
-            userHandle: userHandle ? bufToB64url(userHandle) : null
-          }
-        })
-      });
-      const out = await r2.json();
-      log('login/verify →', out);
-      if (!r2.ok || !out.ok || !out.token) throw new Error('Login verify failed');
-      setSession(out.token);
-    }catch(err){ log('login error:', err.message || err); alert('Login failed'); }
-  }
-
-  // Wire auth buttons
-  UI.btnRegister?.addEventListener('click', passkeyRegister);
-  UI.btnLogin?.addEventListener('click', passkeyLogin);
-  UI.btnLogout?.addEventListener('click', ()=> setSession(null));
+/* ===== Init ===== */
+document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI();
-
-  // ---------- Debug buttons ----------
-  $('#dbg-ping')?.addEventListener('click', async ()=>{
-    try{
-      const r = await fetch('/api/ping', { headers:{ 'Authorization': getSession()? `Bearer ${getSession()}` : '' } });
-      const j = await r.json();
-      log('ping →', j);
-    }catch(e){ log('ping error →', e?.message || e); }
-  });
-  $('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession() }));
-  $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
-
-  // ---------- Save handler ----------
-  document.getElementById('note-form')?.addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const token = getSession();
-    if (!token) { alert('Sign in first.'); return; }
-
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const createdUtc = new Date().toISOString(); // canonical UTC
-    const payload = {
-      body: bodyEl.value,
-      created_at: createdUtc,     // store UTC ISO
-      tz: tz                      // store IANA tz for display
-    };
-
-    try{
-      const r = await fetch('/api/notes', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      const j = await r.json();
-      log('save →', j);
-      if (!r.ok) throw new Error('Save failed');
-      alert('Saved.');
-      bodyEl.value = '';
-      renderPreview();
-    }catch(err){ log('save error:', err?.message || err); alert('Save failed'); }
-  });
+  renderSavedUsers();
+  if (getSession()){ await loadPosts(); }
+});
 </script>
 </body>
 </html>
