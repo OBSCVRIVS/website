@@ -61,6 +61,16 @@
   </section>
 
   <section>
+    <h2>4) Manage posts</h2>
+    <div class="btn-row" style="margin-bottom:8px">
+      <button id="btn-load">Load latest</button>
+      <button id="btn-refresh" type="button">Refresh</button>
+    </div>
+    <p id="list-status" class="muted" aria-live="polite"></p>
+    <div id="notes-list"></div>
+  </section>
+
+  <section>
     <h2>Debug</h2>
     <pre id="out" class="mono muted" style="white-space:pre-wrap"></pre>
   </section>
@@ -73,10 +83,7 @@ const setStatus = (id, text, cls='muted', spinning=false) => {
   const el = document.getElementById(id);
   el.className = cls;
   el.textContent = text;
-  if (spinning) {
-    const s = document.createElement('span'); s.className='spinner';
-    el.appendChild(s);
-  }
+  if (spinning) { const s = document.createElement('span'); s.className='spinner'; el.appendChild(s); }
 };
 const showToast = (text, ok=false) => {
   const t = document.getElementById('toast');
@@ -85,6 +92,7 @@ const showToast = (text, ok=false) => {
   clearTimeout(showToast._h); showToast._h = setTimeout(()=>{ t.className='toast'; }, 2800);
 };
 const j = x => JSON.stringify(x, null, 2);
+const escapeHtml = (s) => { const d=document.createElement('div'); d.innerText=String(s??''); return d.innerHTML; };
 
 /* base64url <-> bytes for WebAuthn */
 const b64uToArray = (b64u) => Uint8Array.from(atob(b64u.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
@@ -102,8 +110,7 @@ document.getElementById('btn-register').addEventListener('click', async (ev) => 
   try {
     const optRes = await fetch(`/webauthn/register/options?username=${encodeURIComponent(username)}`);
     const text = await optRes.text();
-    let opts;
-    try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
+    let opts; try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
     if (!optRes.ok) throw new Error(opts.error || 'options failed');
 
     opts.challenge = b64uToArray(opts.challenge);
@@ -129,8 +136,7 @@ document.getElementById('btn-register').addEventListener('click', async (ev) => 
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const verText = await verRes.text(); let ver;
-    try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
+    const verText = await verRes.text(); let ver; try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
     if (!verRes.ok) throw new Error(ver.error || 'verify failed');
 
     setStatus('reg-status','Registered','ok');
@@ -151,8 +157,7 @@ document.getElementById('btn-login').addEventListener('click', async (ev) => {
   try {
     const optRes = await fetch(`/webauthn/login/options?username=${encodeURIComponent(username)}`);
     const text = await optRes.text();
-    let opts;
-    try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
+    let opts; try { opts = JSON.parse(text); } catch { throw new Error(`options parse failed: ${text.slice(0,160)}`); }
     if (!optRes.ok) throw new Error(opts.error || 'options failed');
 
     opts.challenge = b64uToArray(opts.challenge);
@@ -179,8 +184,7 @@ document.getElementById('btn-login').addEventListener('click', async (ev) => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const verText = await verRes.text(); let ver;
-    try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
+    const verText = await verRes.text(); let ver; try { ver = JSON.parse(verText); } catch { ver = { raw: verText }; }
     if (!verRes.ok) throw new Error(ver.error || 'verify failed');
 
     setStatus('login-status','Signed in (cookie set)','ok');
@@ -204,8 +208,7 @@ document.getElementById('btn-post').addEventListener('click', async (ev) => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body: text })
     });
-    const t = await r.text(); let data;
-    try { data = JSON.parse(t); } catch { data = { raw: t }; }
+    const t = await r.text(); let data; try { data = JSON.parse(t); } catch { data = { raw: t }; }
     if (!r.ok || !data?.ok) throw new Error((data && (data.error||data.detail)) || 'post failed');
 
     setStatus('post-status','Published','ok');
@@ -217,6 +220,97 @@ document.getElementById('btn-post').addEventListener('click', async (ev) => {
     showToast('Publish failed', false);
   } finally { lock(btn,false); }
 });
+
+/* ---------- Admin list / hide / delete ---------- */
+const elList = document.getElementById('notes-list');
+document.getElementById('btn-load').addEventListener('click', loadAdminList);
+document.getElementById('btn-refresh').addEventListener('click', loadAdminList);
+
+function noteRow(n){
+  const wrap = document.createElement('div');
+  wrap.style.border = '1px solid #ddd';
+  wrap.style.borderRadius = '8px';
+  wrap.style.padding = '10px';
+  wrap.style.margin = '8px 0';
+  wrap.dataset.id = n.id;
+
+  const meta = new Date(n.created_at).toLocaleString();
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+      <div style="flex:1">
+        <div style="font-size:.95rem;white-space:pre-wrap">${escapeHtml(n.body)}</div>
+        <div class="muted" style="font-size:.8rem;margin-top:6px">${meta} · ${n.username} · ${n.is_hidden ? 'hidden' : 'visible'}</div>
+      </div>
+      <div style="flex:0 0 auto;display:flex;gap:6px">
+        <button data-act="toggle">${n.is_hidden ? 'Unhide' : 'Hide'}</button>
+        <button data-act="delete" style="color:#b00">Delete</button>
+      </div>
+    </div>
+  `;
+  wrap.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', async (e)=>{
+      const id = wrap.dataset.id;
+      const act = b.getAttribute('data-act');
+      if (act === 'toggle') {
+        await hideToggle(id, !n.is_hidden, wrap, b);
+        n.is_hidden = !n.is_hidden;
+      } else if (act === 'delete') {
+        if (!confirm('Delete this note permanently?')) return;
+        await deleteNote(id, wrap);
+      }
+    });
+  });
+  return wrap;
+}
+
+async function loadAdminList(){
+  setStatus('list-status','Loading…','muted',true);
+  try{
+    const r = await fetch('/api/admin/notes?limit=50');
+    const t = await r.text(); let data; try { data = JSON.parse(t); } catch { throw new Error('parse failed: '+t.slice(0,120)); }
+    if (!r.ok || !Array.isArray(data)) throw new Error((data && data.error) || 'load failed');
+    elList.innerHTML = '';
+    data.forEach(n => elList.appendChild(noteRow(n)));
+    setStatus('list-status', `Loaded ${data.length} note(s)`, 'ok');
+  }catch(err){
+    setStatus('list-status', String(err), 'err');
+  }
+}
+
+async function hideToggle(id, hidden, rowEl, btnEl){
+  btnEl.disabled = true; const old = btnEl.textContent; btnEl.textContent = 'Working…';
+  try{
+    const r = await fetch('/api/admin/notes/hide', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id, hidden })
+    });
+    const t = await r.text(); let d; try { d = JSON.parse(t);} catch { d={raw:t}; }
+    if (!r.ok) throw new Error(d.error || 'update failed');
+    rowEl.querySelector('.muted').textContent =
+      new Date(d.created_at).toLocaleString() + ' · ' + d.username + ' · ' + (d.is_hidden ? 'hidden':'visible');
+    btnEl.textContent = d.is_hidden ? 'Unhide' : 'Hide';
+    showToast(d.is_hidden ? 'Hidden' : 'Unhidden', true);
+  }catch(e){
+    showToast(String(e), false);
+  }finally{
+    btnEl.disabled = false; btnEl.textContent = old;
+  }
+}
+
+async function deleteNote(id, rowEl){
+  try{
+    const r = await fetch('/api/admin/notes/delete', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id })
+    });
+    const t = await r.text(); let d; try { d = JSON.parse(t);} catch { d={raw:t}; }
+    if (!r.ok || !d.ok) throw new Error(d.error || 'delete failed');
+    rowEl.remove();
+    showToast('Deleted', true);
+  }catch(e){
+    showToast(String(e), false);
+  }
+}
 
 /* ---------- Check session ---------- */
 document.getElementById('btn-check').addEventListener('click', async () => {
