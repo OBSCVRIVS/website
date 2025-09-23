@@ -1,92 +1,350 @@
 /* ============================================================
-   HEADER / NAV
+   THEME TOKENS
    ============================================================ */
-.banner{
-  position:relative;
-  width:100%;
-  height:200px;                 /* shorter banner */
-  overflow:hidden;
-}
-@media (min-width:1000px){
-  .banner{ height:240px; }
-}
-.banner > img{
-  width:100%;
-  height:100%;
-  object-fit:cover;             /* no stretching; fill crop */
-  display:block;
+:root {
+  --accent: #EE1F25;
+  --accent-fill: #E41E24; /* darker variant for white text */
 }
 
-.site-nav{
-  background:var(--bg);
-  border-bottom:1px solid var(--field-border);
-  position:sticky;
-  top:0;
-  z-index:10;
+/* Light */
+:root[data-theme="light"] {
+  --bg: #FFFFFF;
+  --ink: #0B0B0B;
+  --muted: #5C5C5C;
+  --field: #F7F7F7;
+  --field-border: #D9D9D9;
+  --focus: var(--accent);
 }
-.site-nav__inner{
-  max-width:960px;
-  margin:0 auto;
-  padding:.75rem 1rem;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
+
+/* Dark */
+:root[data-theme="dark"] {
+  --bg: #0C0C0C;
+  --ink: #F2F2F2;
+  --muted: #BDBDBD;
+  --field: #111111;
+  --field-border: #333333;
+  --focus: var(--accent);
 }
-.site-nav a{
-  text-decoration:none;
-  font-weight:600;
-  color:var(--ink);
+
+/* ============================================================
+   GLOBAL
+   ============================================================ */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
 }
-.site-nav a.nav-link{
-  margin-left:1rem;
-  color:var(--accent);
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+a:hover,
+a:focus {
+  text-decoration-thickness: .14em;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+* {
+  accent-color: var(--accent);
+  -webkit-tap-highlight-color: var(--accent);
+}
+
+.muted { color: var(--muted); }
+
+/* ============================================================
+   HEADER / NAV
+   ============================================================ */
+/* Shorter banner that crops nicely */
+.banner{
+  position: relative;
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+}
+@media (min-width: 1000px){
+  .banner{ height: 240px; }
+}
+.banner > img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Top nav bar */
+.site-nav {
+  background: var(--bg);
+  border-bottom: 1px solid var(--field-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.site-nav__inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: .75rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.site-nav a {
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--ink);
+}
+.site-nav a.nav-link {
+  margin-left: 1rem;
+  color: var(--accent);
 }
 
 /* ============================================================
    HERO (centered; avatar overlaps banner)
    ============================================================ */
-.hero{
-  max-width:960px;
-  margin:-60px auto 2rem;       /* pull hero up to overlap avatar */
-  padding:0 1rem;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:.75rem;
-  text-align:center;
+.hero {
+  max-width: 960px;
+  margin: -60px auto 2rem;   /* pulls avatar up to overlap banner */
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .75rem;
+  text-align: center;
 }
-@media (max-width:700px){
-  .hero{ margin:-48px auto 1.5rem; }
+@media (max-width: 700px){
+  .hero{ margin: -48px auto 1.5rem; }
 }
 
-.hero .avatar{
-  width:128px;
-  height:128px;
-  border-radius:50%;
-  border:3px solid var(--accent); /* keep your red ring */
-  object-fit:cover;
-  box-shadow:0 0 0 4px var(--bg); /* halo so it sits cleanly on banner */
+.hero .avatar {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);   /* keep red ring */
+  object-fit: cover;
+  box-shadow: 0 0 0 4px var(--bg);   /* halo cutout on banner */
 }
 
 .hero-meta{
-  max-width:720px;              /* keep text line length tidy */
+  max-width: 720px;
 }
-.hero-meta h1{
-  margin:.6rem 0 .25rem;        /* tighten gap under avatar */
-  font-size:2rem;
+.hero-meta h1 {
+  margin: .6rem 0 .25rem;
+  font-size: 2rem;
 }
-.tagline{
-  margin:0 0 .5rem;
-  color:var(--muted);
+.tagline {
+  margin: 0 0 .5rem;
+  color: var(--muted);
+}
+.social ul {
+  list-style: none;
+  margin: .25rem 0 0;
+  padding: 0;
+  display: flex;
+  gap: .75rem;
+  justify-content: center;
 }
 
-.social ul{
-  list-style:none;
-  margin:.25rem 0 0;
-  padding:0;
-  display:flex;
-  gap:.75rem;
-  justify-content:center;
+/* ============================================================
+   ABOUT
+   ============================================================ */
+.about {
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.about p { margin-bottom: 1rem; }
+.clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
 }
 
-/* (no profile-header rules needed; keep the rest of your CSS) */
+/* ============================================================
+   FEED / NOTES
+   ============================================================ */
+.feed {
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.tweet {
+  display: flex;
+  gap: .75rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--field-border);
+  cursor: pointer;
+}
+.tweet.expanded { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.tweet__avatar img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+.tweet__body { flex: 1; }
+.tweet__head {
+  font-size: .9rem;
+  margin-bottom: .25rem;
+}
+.tweet__head .name { font-weight: 600; }
+.tweet__head time { color: var(--muted); }
+.tweet__text { margin: .25rem 0 .5rem; }
+.tweet__actions { font-size: .85rem; }
+.pager {
+  margin-top: 1rem;
+  display: flex;
+  gap: .5rem;
+}
+.pager button {
+  padding: .4rem .8rem;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  color: var(--ink);
+  cursor: pointer;
+}
+.pager button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.footer {
+  margin-top: 3rem;
+  padding: 1rem;
+  text-align: center;
+  border-top: 1px solid var(--field-border);
+  color: var(--muted);
+}
+.footer a { color: var(--accent); }
+
+/* ============================================================
+   FORMS / INPUTS
+   ============================================================ */
+input, textarea, select {
+  background: var(--field);
+  color: var(--ink);
+  border: 1px solid var(--field-border);
+  padding: .5rem;
+  border-radius: 4px;
+  font: inherit;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: none;
+}
+button { font: inherit; cursor: pointer; }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-block;
+  padding: .5rem 1rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  text-align: center;
+}
+.btn.primary {
+  background: var(--accent-fill);
+  color: #fff;
+  border-color: var(--accent-fill);
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn.accent-ink {
+  background: var(--accent);
+  color: #000;
+}
+
+/* ============================================================
+   FOCUS / SELECTION
+   ============================================================ */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+::selection { background: var(--accent); color: #fff; }
+input, textarea { caret-color: var(--accent); }
+
+/* ============================================================
+   MARKDOWN STYLES
+   ============================================================ */
+.tweet__text :where(h1,h2,h3) {
+  margin: .6em 0 .3em;
+  font-weight: 700;
+  font-size: 1.1em;
+}
+.tweet__text p { margin: .5em 0; }
+.tweet__text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .95em;
+  padding: .15em .3em;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  border-radius: 3px;
+}
+.tweet__text pre {
+  padding: .75rem;
+  overflow: auto;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  border-radius: 4px;
+}
+.tweet__text ul,
+.tweet__text ol { margin: .5em 0 .5em 1.25em; }
+.tweet__text blockquote {
+  margin: .6em 0;
+  padding-left: .75em;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+/* ============================================================
+   ADMIN / UTILITY CLASSES (shared)
+   ============================================================ */
+.container{
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+.grid-2{
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr 1fr;
+}
+.flex-between{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.card{
+  border: 1px solid var(--field-border);
+  padding: 1rem;
+  border-radius: 4px;
+  background: var(--field);
+}
