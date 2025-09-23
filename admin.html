@@ -6,15 +6,7 @@
   <title>Admin · Notes</title>
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
-  <script>
-    (function(){
-      var t = localStorage.getItem('theme') || 'auto';
-      var initial = (t==='light'||t==='dark')
-        ? t
-        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-      document.documentElement.setAttribute('data-theme', initial);
-    })();
-  </script>
+  
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
@@ -119,63 +111,29 @@ function fmtLocal(iso, tz){
   return `${ds} ${ts} ${tzLabel}`;
 }
 
-/* ===== Theme: auto by sunrise/sunset (uses your location) ===== */
+/* ===== Theme: auto by local clock (no geo) ===== */
 (function () {
-  // Fallback (LA) until geolocation is granted
-  let coords = { lat: 34.0522, lon: -118.2437 };
+  // Light between these hours (local time), dark otherwise
+  const LIGHT_START_H = 7;   // 07:00
+  const LIGHT_END_H   = 19;  // 19:00
 
-  // Julian/sun helpers (unchanged math)
-  function sunTimes(date, lat, lon) {
-    const rad = Math.PI/180, dayMs = 86400000;
-    const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-    const J2000 = 946684800000;
-    const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
-    const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545);
-    function solNoon(){
-      const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
-      const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
-      const L = (M + 102.9372 + C + 180) % 360;
-      return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
-    }
-    function hourAngle(){
-      const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
-      const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
-      const L = (M + 102.9372 + C + 180) % 360;
-      const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
-      const φ = lat*rad, h0 = (-6)*rad; // civil twilight
-      const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
-      if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH);
-    }
-    const Jnoon = solNoon();
-    const H = hourAngle();
-    function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
-    return { sunrise: jdToDate(Jnoon - (H/(2*Math.PI))), sunset: jdToDate(Jnoon + (H/(2*Math.PI))) };
-  }
-
-  function applyThemeAuto() {
+  function applyThemeByClock() {
     const now = new Date();
-    const { sunrise, sunset } = sunTimes(now, coords.lat, coords.lon);
-    const mode = (now > sunrise && now < sunset) ? 'light' : 'dark';
+    const h = now.getHours();
+    const mode = (h >= LIGHT_START_H && h < LIGHT_END_H) ? 'light' : 'dark';
     const html = document.documentElement;
     html.setAttribute('data-theme', mode);
-    // keep meta color in sync
+
+    // keep meta theme-color in sync
     const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
     meta.setAttribute('content', bg);
   }
 
-  // Try to use browser location (once); then apply + schedule checks
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { coords = { lat: pos.coords.latitude, lon: pos.coords.longitude }; applyThemeAuto(); },
-      () => applyThemeAuto(),
-      { maximumAge: 3600_000, timeout: 8000 }
-    );
-  }
-  // Initial + hourly update
-  applyThemeAuto();
-  setInterval(applyThemeAuto, 60 * 60 * 1000);
+  // Initial + check every 15 minutes
+  applyThemeByClock();
+  setInterval(applyThemeByClock, 15 * 60 * 1000);
 })();
 
 /* ===== Markdown preview ===== */
