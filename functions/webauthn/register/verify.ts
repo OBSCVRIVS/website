@@ -1,14 +1,16 @@
 // functions/webauthn/register/verify.ts
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
 
-const VERSION = 'register-verify-v3';
+const VERSION = 'register-verify-hex-v1';
 
-const bytesToB64 = (arr: ArrayBuffer | Uint8Array) => {
+const bytesToHex = (arr: ArrayBuffer | Uint8Array) => {
   const u8 = arr instanceof Uint8Array ? arr : new Uint8Array(arr);
-  // btoa expects binary string
-  let s = '';
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  return (typeof btoa !== 'undefined' ? btoa(s) : Buffer.from(u8).toString('base64'));
+  let out = '\\x';
+  for (let i = 0; i < u8.length; i++) {
+    const b = u8[i].toString(16).padStart(2, '0');
+    out += b;
+  }
+  return out; // e.g. "\x3059..."
 };
 
 function j(obj: unknown, status = 200) {
@@ -40,12 +42,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     });
     if (!verified || !registrationInfo) return j({ error: 'not_verified', VERSION }, 400);
 
-    // Use browser-provided id as stored id (base64url string)
+    // Use browser credential id as stored id (base64url string)
     const credIdB64u: string = String(body.id || '');
     if (!credIdB64u) return j({ error: 'missing_client_credential_id', VERSION }, 400);
 
-    // Convert public key bytes → base64 string for PostgREST bytea
-    const publicKey_b64 = bytesToB64(registrationInfo.credentialPublicKey);
+    // Convert public key bytes → bytea hex string for PostgREST
+    const publicKey_hex = bytesToHex(registrationInfo.credentialPublicKey);
     const counter = registrationInfo.counter ?? 0;
 
     // Ensure user
@@ -69,7 +71,7 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       userId = (await ins.json())[0].id;
     }
 
-    // Insert/merge credential; send bytea as base64 string
+    // Insert/merge credential; send bytea as hex string "\x..."
     const credIns = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials`, {
       method: 'POST',
       headers: {
@@ -77,9 +79,9 @@ export const onRequestPost: PagesFunction = async (ctx) => {
         'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates'
       },
       body: JSON.stringify({
-        id: credIdB64u,           // base64url string
-        user_id: userId,          // uuid
-        public_key: publicKey_b64, // bytea via base64
+        id: credIdB64u,          // base64url id
+        user_id: userId,         // uuid
+        public_key: publicKey_hex, // bytea hex
         counter: counter,
         transports: null
       })
