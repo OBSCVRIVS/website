@@ -214,22 +214,17 @@ function b64urlToBuf(b64url){ const pad = '='.repeat((4 - b64url.length % 4) % 4
 function bufToB64url(buf){ const bytes = new Uint8Array(buf); let bin=''; for (let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 
-/* ===== WebAuthn endpoints (send username first) ===== */
+/* ===== WebAuthn endpoints (send username) ===== */
 async function fetchJSON(url, init){ return api(url, init); }
 function addUserParam(url, username){
   const u = new URL(url, ORIGIN);
   if (username) u.searchParams.set('username', username.toLowerCase().trim());
   return u.pathname + u.search;
 }
-async function waOptions(flow, payload){
+async function waOptions(flow){
   const username = (UI.username?.value || '').trim();
-  // 1) GET with ?username=...
   try { return { data: await fetchJSON(addUserParam(`/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch {}
-  // 2) GET under /api with ?username=...
   try { return { data: await fetchJSON(addUserParam(`/api/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch {}
-  // 3) POST body
-  try { return { data: await fetchJSON(`/webauthn/${flow}/options`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload||{}) }) }; } catch {}
-  try { return { data: await fetchJSON(`/api/webauthn/${flow}/options`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload||{}) }) }; } catch {}
   throw new Error('No options endpoint');
 }
 async function waVerify(flow, payload){
@@ -238,7 +233,7 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes endpoints (your repo layout) ===== */
+/* ===== Notes endpoints ===== */
 // CREATE → POST /api/post
 async function notesCreate(payload){
   return fetchJSON('/api/post', {
@@ -251,33 +246,69 @@ async function notesCreate(payload){
 async function notesList(){
   return fetchJSON('/api/notes', { method:'GET' });
 }
-// PATCH HIDDEN → PATCH /notes/:id
+
+// PATCH HIDDEN with fallbacks: /notes/:id PATCH → /api/notes/:id PATCH → POST emulate
 async function notesPatch(id, body){
-  return fetchJSON(`/notes/${encodeURIComponent(id)}`, {
-    method:'PATCH',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify(body)
-  });
-}
-// DELETE → DELETE /notes/:id
-async function notesDelete(id){
-  return fetchJSON(`/notes/${encodeURIComponent(id)}`, { method:'DELETE' });
+  const paths = [
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'PATCH' },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'PATCH' },
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
+  ];
+  let lastErr;
+  for (const p of paths){
+    try{
+      const payload = p.emulate ? { action:'update', ...body } : body;
+      return await fetchJSON(p.url, {
+        method: p.method,
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Patch failed');
 }
 
-/* ===== Optional: decode base64/base64url bodies for display ===== */
+// DELETE with fallbacks: /notes/:id DELETE → /api/notes/:id DELETE → POST emulate
+async function notesDelete(id){
+  const paths = [
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
+    { url: `/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method: 'POST', emulate: true },
+  ];
+  let lastErr;
+  for (const p of paths){
+    try{
+      const init = p.emulate
+        ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'delete' }) }
+        : { method:p.method };
+      return await fetchJSON(p.url, init);
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Delete failed');
+}
+
+/* ===== Optional: decode base64/base64url bodies for display (no duplicates) ===== */
 function tryDecodeBody(s){
   if (typeof s !== 'string') return s;
   const clean = s.trim();
-  // quick reject if obviously not base64-ish
-  if (!/^[A-Za-z0-9+/_=-]+$/.test(clean)) return s;
-  const toBytes = (val, url) => {
-    const b64 = url ? val.replace(/-/g,'+').replace(/_/g,'/') : val;
-    try{ const bin = atob(b64); return new TextDecoder().decode(Uint8Array.from(bin, c=>c.charCodeAt(0))); }catch{ return null; }
+  // if it already looks like readable text, keep it
+  if (/[a-zA-Z]/.test(clean) && /\s/.test(clean) && !/^[A-Za-z0-9+/_=-]+$/.test(clean)) return s;
+  const toText = (val) => {
+    try{
+      const b64 = val.replace(/-/g,'+').replace(/_/g,'/');
+      const bin = atob(b64);
+      const bytes = Uint8Array.from(bin, c=>c.charCodeAt(0));
+      const out = new TextDecoder().decode(bytes);
+      // ensure printable range
+      if (!/[\u0000-\u001F\u007F]/.test(out)) return out;
+    }catch{}
+    return null;
   };
-  let out = toBytes(clean, false);
-  if (out && /^[\s\S]*$/.test(out) && /[ -~\t\r\n]/.test(out)) return out;
-  out = toBytes(clean, true);
-  if (out && /[ -~\t\r\n]/.test(out)) return out;
+  const d = toText(clean);
+  // only use decoded if it differs meaningfully from original
+  if (d && d.replace(/\s+/g,' ').trim() !== clean.replace(/\s+/g,' ').trim()) return d;
   return s;
 }
 
@@ -285,7 +316,7 @@ function tryDecodeBody(s){
 async function passkeyRegister(){
   try{
     const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
-    const { data } = await waOptions('register', { username });
+    const { data } = await waOptions('register');
     const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
@@ -296,14 +327,13 @@ async function passkeyRegister(){
       response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
     });
     if (!out?.ok) throw new Error('Registration verify failed');
-    alert('POSTED.'); // reuses same minimal toast style
-    saveUser(username);
+    alert('POSTED.'); saveUser(username);
   }catch(e){ log('register error:', e?.message || e); alert('Post failed'); }
 }
 async function passkeyLogin(){
   try{
     const username = UI.username.value.trim();
-    const { data } = await waOptions('login', { username });
+    const { data } = await waOptions('login');
     const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
@@ -327,9 +357,7 @@ renderSavedUsers(); refreshAuthUI();
 /* ===== Debug ===== */
 $('#dbg-ping')?.addEventListener('click', async ()=>{
   const tries = ['/health','/api/health'];
-  for (const t of tries) {
-    try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); }
-  }
+  for (const t of tries) { try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); } }
 });
 $('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), origin: ORIGIN }));
 $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
@@ -369,7 +397,7 @@ function renderPosts(notes){
         <div style="flex:1;overflow:hidden">
           <div><strong>${n.id}</strong></div>
           <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when} · ${n.tz || ''}</div>
-          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${snippet}</div>
+          ${snippet ? `<div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${snippet}</div>` : ''}
           ${n.hidden ? '<div class="muted">Hidden</div>' : ''}
         </div>
         <div style="display:flex;gap:.5rem">
@@ -398,7 +426,7 @@ function renderPosts(notes){
 /* ===== Init ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI(); renderSavedUsers(); await loadPosts();
-  localStorage.removeItem('API_BASE'); // ensure no stale manual base
+  localStorage.removeItem('API_BASE');
 });
 </script>
 </body>
