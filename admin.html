@@ -428,48 +428,68 @@ async function toggleHidden(id, makeHidden){
 /* Mirror frontend card exactly. Hidden → strikethrough + muted + “Unhide”. */
 function renderPosts(notes){
   if (!postsBox) return;
-  const list = showHidden?.checked ? notes : notes.filter(n => !n.is_hidden);
-  if (!list.length){
+
+  if (!Array.isArray(notes) || notes.length === 0){
     postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
     return;
   }
 
-  const rows = list.map(n=>{
+  const rows = notes.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
-    const hidden = !!n.is_hidden;
-    const hiddenStyle = hidden ? 'opacity:.6;text-decoration:line-through;color:var(--muted)' : '';
-    const btnLabel = hidden ? 'Unhide' : 'Hide';
+    const decoded = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
+    const textClass = n.is_hidden ? 'muted' : '';
+    const textStyle = n.is_hidden ? 'text-decoration: line-through; opacity:.6;' : '';
 
     return `
-      <article class="tweet expanded" id="${n.id}" style="border-top:1px solid var(--field-border)">
-        <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
-        <div class="tweet__body">
-          <header class="tweet__head">
-            <span class="name">Levi Carver</span>
-            <span class="dot" aria-hidden="true">·</span>
-            <time datetime="${n.created_at}">${when}</time>
-          </header>
-          <div class="tweet__text" style="${hiddenStyle}">${md(n.body)}</div>
-          <div class="tweet__actions" style="display:flex;gap:.5rem">
-            <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${hidden?1:0}">${btnLabel}</button>
-            <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
-            <a class="permalink" href="notes/${n.id}" aria-label="Permalink" style="margin-left:auto">Permalink</a>
+      <article class="tweet" style="padding:1rem;border-top:1px solid var(--field-border)">
+        <div style="display:flex;gap:.75rem">
+          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+          <div class="tweet__body" style="flex:1">
+            <header class="tweet__head">
+              <span class="name">Levi Carver</span>
+              <span class="dot" aria-hidden="true">·</span>
+              <time datetime="${n.created_at}">${when}</time>
+            </header>
+            <div class="tweet__text ${textClass}" style="${textStyle}">${decoded}</div>
+            <div class="tweet__actions" style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
+              <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">
+                ${n.is_hidden ? 'Unhide' : 'Hide'}
+              </button>
+              <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
+              <a class="permalink" href="/notes/${n.id}" target="_blank" style="margin-left:auto">Permalink</a>
+            </div>
           </div>
         </div>
-      </article>`;
+      </article>
+    `;
   }).join('');
+
   postsBox.innerHTML = rows;
 
-  // link safety inside rendered markdown
-  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
-
-  // card expand/collapse like frontend
-  postsBox.querySelectorAll('.tweet').forEach(card=>{
-    card.addEventListener('click', (ev)=>{
-      if (ev.target.closest('a,button')) return;
-      card.classList.toggle('expanded');
+  // wire toggle
+  postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.getAttribute('data-id');
+      const hidden = b.getAttribute('data-hidden') === '1';
+      try {
+        await toggleHidden(id, !hidden);
+        await loadPosts();
+      }catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
     });
   });
+
+  // wire delete
+  postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const id = b.getAttribute('data-id');
+      if (!confirm('Delete this post?')) return;
+      try {
+        await notesDelete(id);
+        await loadPosts();
+      }catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
+    });
+  });
+}
 
   // actions
   postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
