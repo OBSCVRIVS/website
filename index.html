@@ -1,10 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Levi Carver</title>
   <link rel="stylesheet" href="styles.css">
+  <meta name="theme-color" content="#FFFFFF">
+
+  <!-- Reduce flash: set initial theme before paint -->
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme') || 'auto';
+      var initial = (t==='light'||t==='dark')
+        ? t
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', initial);
+    })();
+  </script>
+
+  <!-- Markdown + Sanitizer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
 <body>
 <header class="banner" role="banner" aria-label="Site banner">
@@ -59,10 +75,32 @@
 
 <footer class="footer" role="contentinfo">
   <small>© 2025 Levi Carver · <a href="contact.html">Contact</a></small>
+
+  <!-- Theme control (owner override) -->
+  <label class="muted" style="display:inline-flex;gap:.5rem;align-items:center;margin-left:1rem">
+    Theme:
+    <select id="theme-select">
+      <option value="auto">Auto (sunrise/sunset)</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </label>
 </footer>
 
 <script>
-  // About expand/collapse
+  // ===== Markdown helper =====
+  window.MD = {
+    parse(md){
+      marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+      const html = marked.parse(md || "");
+      return DOMPurify.sanitize(html, {
+        ADD_ATTR:['target','rel'],
+        FORBID_TAGS:['script','style']
+      });
+    }
+  };
+
+  // ===== About expand/collapse =====
   (function () {
     const text = document.getElementById('about-text');
     const btn = document.getElementById('about-toggle');
@@ -75,7 +113,7 @@
     });
   }());
 
-  // Notes render (tweet-style) loading from /api/notes
+  // ===== Notes render (from /api/notes) with Markdown =====
   (async function () {
     const pageSize = 10;
     let page = 0;
@@ -89,10 +127,6 @@
       return d.toLocaleString(undefined, { month:'short', day:'numeric' }) + ' · ' +
              d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
     }
-    function escapeHtml(s){
-      const div = document.createElement('div'); div.innerText = s;
-      return div.innerHTML;
-    }
 
     async function load(){
       try {
@@ -101,7 +135,7 @@
         notes = await r.json();
         render();
       } catch {
-        container.innerHTML = '<p style="color:#aaa">Could not load notes.</p>';
+        container.innerHTML = '<p class="muted">Could not load notes.</p>';
       }
     }
 
@@ -122,19 +156,25 @@
               <span class="dot" aria-hidden="true">·</span>
               <time datetime="${n.created_at}">${fmtTime(n.created_at)}</time>
             </header>
-            <div class="tweet__text">${escapeHtml(n.body)}</div>
+            <div class="tweet__text">${MD.parse(n.body)}</div>
             <div class="tweet__actions">
               <a class="permalink" href="notes/${n.id}" aria-label="Permalink">Permalink</a>
             </div>
           </div>
         `;
 
+        // Expand/collapse card on background click
         card.addEventListener('click', (ev) => {
           if (ev.target.closest('a,button')) return;
           card.classList.toggle('expanded');
         });
 
         container.appendChild(card);
+      });
+
+      // Make links safe
+      container.querySelectorAll('.tweet__text a').forEach(a=>{
+        a.target = '_blank'; a.rel = 'noopener noreferrer';
       });
 
       newer.disabled = page === 0;
@@ -146,7 +186,89 @@
 
     await load();
   }());
+
+  // ===== Theme engine: auto by sunrise/sunset, override via select =====
+  (function () {
+    const CONFIG = { lat: 34.0522, lon: -118.2437 }; // LA
+    const STORAGE_KEY = "theme";
+    const selectEl = document.getElementById("theme-select");
+
+    function sunTimes(date, lat, lon) {
+      const rad = Math.PI/180, dayMs = 86400000;
+      const dateUTC = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      const J2000 = 946684800000; // ms since Unix epoch to 2000-01-01
+      const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
+      const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545); // shift to JD
+      function solNoon(){
+        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+        const L = (M + 102.9372 + C + 180) % 360;
+        return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
+      }
+      function hourAngle(h0Deg){
+        const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+        const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+        const L = (M + 102.9372 + C + 180) % 360;
+        const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
+        const φ = lat*rad, h0 = (-6)*rad; // civil twilight
+        const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
+        if (cosH <= -1) return Math.PI;
+        if (cosH >= 1) return 0;
+        return Math.acos(cosH);
+      }
+      function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
+      const Jnoon = solNoon();
+      const H = hourAngle(-6);
+      const Jrise = Jnoon - (H/(2*Math.PI));
+      const Jset  = Jnoon + (H/(2*Math.PI));
+      return { sunrise: jdToDate(Jrise), sunset: jdToDate(Jset) };
+    }
+
+    function isNightNow(lat, lon){
+      const now = new Date();
+      const { sunrise, sunset } = sunTimes(now, lat, lon);
+      return (now < sunrise) || (now > sunset);
+    }
+    function systemPrefersDark(){
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    function applyTheme(theme){
+      const html = document.documentElement;
+      let resolved = theme;
+      if (theme === "auto") {
+        try { resolved = isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light"; }
+        catch { resolved = systemPrefersDark() ? "dark" : "light"; }
+      }
+      html.setAttribute("data-theme", resolved);
+      const bg = getComputedStyle(html).getPropertyValue("--bg").trim();
+      let meta = document.querySelector('meta[name="theme-color"]');
+      if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
+      meta.setAttribute("content", bg);
+    }
+
+    const saved = localStorage.getItem(STORAGE_KEY) || "auto";
+    applyTheme(saved);
+    if (selectEl) selectEl.value = saved;
+
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
+      });
+    }
+    setInterval(() => {
+      if ((localStorage.getItem(STORAGE_KEY) || "auto") === "auto") applyTheme("auto");
+    }, 60*60*1000);
+
+    if (selectEl) {
+      selectEl.addEventListener("change", (e) => {
+        const value = e.target.value;
+        localStorage.setItem(STORAGE_KEY, value);
+        applyTheme(value);
+      });
+    }
+    window.Theme = { get: () => localStorage.getItem(STORAGE_KEY) || "auto",
+                     set: (mode) => { localStorage.setItem(STORAGE_KEY, mode); applyTheme(mode); } };
+  })();
 </script>
 </body>
 </html>
- 
