@@ -21,26 +21,29 @@
 <main id="main">
   <section class="contact" aria-labelledby="contact-title">
     <h1 id="contact-title">Contact</h1>
+
     <form id="contact" action="https://api.web3forms.com/submit" method="POST" novalidate>
       <input type="hidden" name="access_key" value="642d5640-c693-47e0-81b5-ab16fdead468">
       <input type="hidden" name="from_name" value="lpcarver.com">
       <input type="hidden" name="subject" value="New message from lpcarver.com">
 
-      <label>Name
-        <input type="text" name="name" required autocomplete="name">
+      <label for="name">Name
+        <input id="name" type="text" name="name" required autocomplete="name" placeholder="Your full name">
       </label>
 
-      <label>Email
-        <input type="email" name="email" required autocomplete="email">
+      <label for="email">Email
+        <input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com" inputmode="email">
       </label>
 
-      <label>Message
-        <textarea name="message" rows="5" required></textarea>
+      <label for="message">Message
+        <textarea id="message" name="message" rows="5" required placeholder="Write your message here…" minlength="5"></textarea>
       </label>
 
-      <input type="checkbox" name="botcheck" style="display:none" tabindex="-1" aria-hidden="true">
-      <button type="submit" class="btn">Send</button>
-      <p id="status" role="status" aria-live="polite"></p>
+      <input id="botcheck" type="checkbox" name="botcheck" style="display:none" tabindex="-1" aria-hidden="true">
+
+      <button id="sendBtn" type="submit" class="btn">Send</button>
+      <p id="form-error" style="color:#b00; display:none; margin-top:8px;"></p>
+      <p id="status" role="status" aria-live="polite" style="margin-top:8px;"></p>
     </form>
   </section>
 </main>
@@ -50,23 +53,71 @@
 </footer>
 
 <script>
-  // Contact form submit UX
+(function () {
   const form = document.getElementById('contact');
+  const btn  = document.getElementById('sendBtn');
+  const err  = document.getElementById('form-error');
   const status = document.getElementById('status');
+
+  function showError(msg) {
+    err.textContent = msg;
+    err.style.display = 'block';
+    status.textContent = '';
+  }
+  function clearError() { err.style.display = 'none'; err.textContent = ''; }
+
+  function setBusy(on) {
+    btn.disabled = on;
+    btn.textContent = on ? 'Sending…' : 'Send';
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    clearError();
+
+    const nameEl = document.getElementById('name');
+    const emailEl = document.getElementById('email');
+    const msgEl = document.getElementById('message');
+    const bot = document.getElementById('botcheck');
+
+    const name = nameEl.value.trim();
+    const email = emailEl.value.trim();
+    const message = msgEl.value.trim();
+
+    // basic checks
+    if (!name) { showError('Please enter your name.'); nameEl.focus(); return; }
+    if (!email) { showError('Please enter your email.'); emailEl.focus(); return; }
+    // rely on type="email" but add a light sanity check
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError('Enter a valid email address.'); emailEl.focus(); return; }
+    if (!message || message.length < 5) { showError('Please enter a short message.'); msgEl.focus(); return; }
+    if (bot.checked) { showError('Bot detected.'); return; }
+
+    setBusy(true);
     status.textContent = 'Sending…';
+
     try {
       const res = await fetch(form.action, {
         method: 'POST',
         body: new FormData(form),
         headers: { 'Accept': 'application/json' }
       });
+
       const data = await res.json().catch(() => ({}));
-      if (res.ok) { form.reset(); status.textContent = 'Sent. Thanks!'; }
-      else { status.textContent = data.message || 'Error. Try again later.'; }
-    } catch { status.textContent = 'Network error. Try again.'; }
+
+      if (res.ok) {
+        form.reset();
+        status.textContent = 'Sent. Thanks!';
+        clearError();
+      } else {
+        showError(data.message || 'Error. Try again later.');
+      }
+    } catch {
+      showError('Network error. Try again.');
+    } finally {
+      setBusy(false);
+    }
   });
+}());
 </script>
 </body>
 </html>
