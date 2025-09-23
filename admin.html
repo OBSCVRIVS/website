@@ -401,7 +401,7 @@ function renderPosts(notes){
           ${n.is_hidden ? '<div class="muted">Hidden</div>' : ''}
         </div>
         <div style="display:flex;gap:.5rem">
-          <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">${n.hidden?'Unhide':'Hide'}</button>
+          <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">${n.is_hidden?'Unhide':'Hide'}</button>
           <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
         </div>
       </div>`;
