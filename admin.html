@@ -428,36 +428,39 @@ async function toggleHidden(id, makeHidden){
 /* Mirror frontend card exactly. Hidden → strikethrough + muted + “Unhide”. */
 function renderPosts(notes){
   if (!postsBox) return;
-
   if (!Array.isArray(notes) || notes.length === 0){
     postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
     return;
   }
 
+  // local markdown renderer (same as feed)
+  const md = (src) => {
+    marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+    const html = marked.parse(src || "");
+    return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
+  };
+
   const rows = notes.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
-    const decoded = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
-    const textClass = n.is_hidden ? 'muted' : '';
-    const textStyle = n.is_hidden ? 'text-decoration: line-through; opacity:.6;' : '';
+    const hidden = !!n.is_hidden;
+    const textStyle = hidden ? 'text-decoration:line-through;opacity:.6;color:var(--muted)' : '';
 
     return `
-      <article class="tweet" style="padding:1rem;border-top:1px solid var(--field-border)">
-        <div style="display:flex;gap:.75rem">
-          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
-          <div class="tweet__body" style="flex:1">
-            <header class="tweet__head">
-              <span class="name">Levi Carver</span>
-              <span class="dot" aria-hidden="true">·</span>
-              <time datetime="${n.created_at}">${when}</time>
-            </header>
-            <div class="tweet__text ${textClass}" style="${textStyle}">${decoded}</div>
-            <div class="tweet__actions" style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
-              <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">
-                ${n.is_hidden ? 'Unhide' : 'Hide'}
-              </button>
-              <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
-              <a class="permalink" href="/notes/${n.id}" target="_blank" style="margin-left:auto">Permalink</a>
-            </div>
+      <article class="tweet" id="${n.id}" style="padding:1rem;border-top:1px solid var(--field-border)">
+        <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+        <div class="tweet__body">
+          <header class="tweet__head">
+            <span class="name">Levi Carver</span>
+            <span class="dot" aria-hidden="true">·</span>
+            <time datetime="${n.created_at}">${when}</time>
+          </header>
+          <div class="tweet__text" style="${textStyle}">${md(n.body)}</div>
+          <div class="tweet__actions" style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
+            <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${hidden?1:0}">
+              ${hidden ? 'Unhide' : 'Hide'}
+            </button>
+            <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
+            <a class="permalink" href="/notes/${n.id}" target="_blank" rel="noopener noreferrer" style="margin-left:auto">Permalink</a>
           </div>
         </div>
       </article>
@@ -466,37 +469,20 @@ function renderPosts(notes){
 
   postsBox.innerHTML = rows;
 
-  // wire toggle
-  postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id');
-      const hidden = b.getAttribute('data-hidden') === '1';
-      try {
-        await toggleHidden(id, !hidden);
-        await loadPosts();
-      }catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
-    });
-  });
+  // safe links inside markdown
+  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
 
-  // wire delete
-  postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id');
-      if (!confirm('Delete this post?')) return;
-      try {
-        await notesDelete(id);
-        await loadPosts();
-      }catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
-    });
+  // expand/collapse like feed
+  postsBox.querySelectorAll('.tweet').forEach(card=>{
+    card.addEventListener('click', (ev)=>{ if (ev.target.closest('a,button')) return; card.classList.toggle('expanded'); });
   });
-}
 
   // actions
   postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
       const hidden = b.getAttribute('data-hidden') === '1';
-      try { await toggleHidden(id, !hidden); await loadPosts(); }
+      try { await notesPatch(id, { is_hidden: !hidden }); await loadPosts(); }
       catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
     });
   });
@@ -526,7 +512,7 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
 });
 async function loadPosts(){
   try{
-    const notes = await notesList(!!showHidden?.checked);
+    const notes = await notesList(true); // always include hidden
     window.__NOTES = Array.isArray(notes) ? notes : [];
     renderPosts(window.__NOTES);
   }catch(e){
