@@ -1,8 +1,9 @@
 // functions/webauthn/login/verify.ts
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 
-const VERSION = 'login-verify-v5';
+const VERSION = 'login-verify-v6';
 
+// --- robust decoders ---
 const b64urlToBytes = (s: string) => {
   const pad = s.length % 4 === 2 ? '==' : s.length % 4 === 3 ? '=' : '';
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
@@ -16,6 +17,33 @@ const b64ToBytes = (s: string) => {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+};
+const hexToBytes = (hex: string) => {
+  const h = hex.startsWith('\\x') || hex.startsWith('0x') ? hex.slice(2) : hex;
+  if (h.length % 2) throw new Error('hex length odd');
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+  return out;
+};
+const decodeAny = (v: any): Uint8Array => {
+  if (!v) return new Uint8Array();
+  if (v instanceof Uint8Array) return v;
+  if (v?.data && Array.isArray(v.data)) return new Uint8Array(v.data); // some drivers
+  if (typeof v === 'string') {
+    try {
+      if (v.startsWith('\\x') || v.startsWith('0x')) return hexToBytes(v);
+      if (/^[A-Za-z0-9+/]+={0,2}$/.test(v)) return b64ToBytes(v);   // base64
+      if (/^[A-Za-z0-9\-_]+$/.test(v)) return b64urlToBytes(v);     // base64url
+      // last resort: try base64 then base64url
+      try { return b64ToBytes(v); } catch {}
+      return b64urlToBytes(v);
+    } catch (e) {
+      throw new Error('public_key decode failed');
+    }
+  }
+  if (v instanceof ArrayBuffer) return new Uint8Array(v);
+  if (ArrayBuffer.isView(v)) return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+  throw new Error('unsupported public_key type');
 };
 
 function j(obj: unknown, status = 200) {
@@ -57,13 +85,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
     const creds = (await cRes.json()) as Array<any>;
     if (!Array.isArray(creds) || creds.length === 0) return j({ error: 'no_credentials_for_user', VERSION }, 404);
 
-    // match by id
     const cred = creds.find(c => String(c?.id || '') === String(credIdFromClient));
     if (!cred) return j({ error: 'no_credential_for_user', got: credIdFromClient, have: creds.map(c => c?.id || null), VERSION }, 404);
 
-    // Decode: our register now stores bytea as base64 string
-    const credentialID = b64urlToBytes(String(cred.id));
-    const credentialPublicKey = b64ToBytes(String(cred.public_key));
+    // decode fields
+    const credentialID = b64urlToBytes(String(cred.id));        // stored as base64url string
+    const credentialPublicKey = decodeAny(cred.public_key);     // hex | base64 | base64url
     const prevCounter = Number(cred.counter ?? 0);
 
     const url = new URL(ctx.request.url);
@@ -72,16 +99,12 @@ export const onRequestPost: PagesFunction = async (ctx) => {
       expectedChallenge,
       expectedOrigin: `${url.protocol}//${url.host}`,
       expectedRPID: url.hostname,
-      authenticator: {
-        credentialID,
-        credentialPublicKey,
-        counter: prevCounter,
-      },
+      authenticator: { credentialID, credentialPublicKey, counter: prevCounter },
       requireUserVerification: false,
     });
     if (!verified || !authenticationInfo) return j({ error: 'not_verified', VERSION }, 400);
 
-    // update counter
+    // bump counter
     const up = await fetch(`${SUPABASE_URL}/rest/v1/webauthn_credentials?id=eq.${encodeURIComponent(String(cred.id))}`, {
       method: 'PATCH',
       headers: {
