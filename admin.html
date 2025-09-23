@@ -214,64 +214,98 @@ function b64urlToBuf(b64url){ const pad = '='.repeat((4 - b64url.length % 4) % 4
 function bufToB64url(buf){ const bytes = new Uint8Array(buf); let bin=''; for (let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 
-/* ===== Endpoint resolver (root and /api; GET with username when needed) ===== */
-const BASES = ['', 'api']; // '' → root matches functions/webauthn/*
+/* ===== Endpoint resolvers ===== */
+const BASES = ['', 'api']; // try root first, then /api
+
+// --- WebAuthn options/verify (already working for you) ---
 async function fetchJSON(url, init){ return api(url, init); }
 function addUserParam(url, username){
   if (!username) return url;
   const u = new URL(url, ORIGIN);
   u.searchParams.set('username', username.toLowerCase().trim());
-  return u.pathname + u.search; // return path+query for api()
+  return u.pathname + u.search;
 }
 async function waOptions(flow, payload){
   const username = (UI.username?.value || '').trim();
-  const attempts=[];
   for (const b of BASES){
     const base = b? `/${b}` : '';
-    // 1) POST .../options (some backends)
-    const postUrl = `${base}/webauthn/${flow}/options`;
-    try { return { data: await fetchJSON(postUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: postUrl }; }
-    catch(e){ attempts.push(`POST ${postUrl} → ${e.message}`); }
-    // 2) GET .../options?username=...  ← your register/options.ts expects this
-    const getUrl = addUserParam(postUrl, username);
-    try { return { data: await fetchJSON(getUrl, { method:'GET' }), url: getUrl }; }
-    catch(e){ attempts.push(`GET ${getUrl} → ${e.message}`); }
-    // 3) Single-endpoint form
-    const singleUrl = `${base}/webauthn/${flow}`;
-    try { return { data: await fetchJSON(singleUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: singleUrl }; }
-    catch(e){ attempts.push(`POST ${singleUrl} → ${e.message}`); }
+    try { return { data: await fetchJSON(`${base}/webauthn/${flow}/options`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) }; } catch{}
+    try { return { data: await fetchJSON(addUserParam(`${base}/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch{}
+    try { return { data: await fetchJSON(`${base}/webauthn/${flow}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) }; } catch{}
   }
-  log('waOptions attempts:', attempts); throw new Error('No options endpoint');
+  throw new Error('No options endpoint');
 }
 async function waVerify(flow, payload){
+  for (const b of BASES){
+    const base = b? `/${b}` : '';
+    try { return { data: await fetchJSON(`${base}/webauthn/${flow}/verify`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) }; } catch{}
+    try { return { data: await fetchJSON(`${base}/webauthn/${flow}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) }; } catch{}
+  }
+  throw new Error('No verify endpoint');
+}
+
+/* --- Notes endpoints (probe root and /api) --- */
+async function notesCreate(payload, token){
   const attempts=[];
   for (const b of BASES){
     const base = b? `/${b}` : '';
-    const verifyUrl = `${base}/webauthn/${flow}/verify`;
-    try { return { data: await fetchJSON(verifyUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: verifyUrl }; }
-    catch(e){ attempts.push(`POST ${verifyUrl} → ${e.message}`); }
-    const singleUrl = `${base}/webauthn/${flow}`;
-    try { return { data: await fetchJSON(singleUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: singleUrl }; }
-    catch(e){ attempts.push(`POST ${singleUrl} → ${e.message}`); }
+    try {
+      return await fetchJSON(`${base}/notes`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', ...(token? {Authorization:`Bearer ${token}`} : {}) },
+        body: JSON.stringify(payload)
+      });
+    } catch(e){ attempts.push(`${base||'/'}notes → ${e.message}`); }
   }
-  log('waVerify attempts:', attempts); throw new Error('No verify endpoint');
+  log('notesCreate attempts:', attempts); throw new Error('No notes POST endpoint');
+}
+async function notesList(token){
+  for (const b of BASES){
+    const base = b? `/${b}` : '';
+    try { return await fetchJSON(`${base}/notes?all=1`, { headers:{ ...(token? {Authorization:`Bearer ${token}`} : {}) } }); } catch{}
+  }
+  throw new Error('No notes GET endpoint');
+}
+async function notesPatch(id, body, token){
+  for (const b of BASES){
+    const base = b? `/${b}` : '';
+    try {
+      return await fetchJSON(`${base}/notes/${encodeURIComponent(id)}`, {
+        method:'PATCH',
+        headers:{ 'Content-Type':'application/json', ...(token? {Authorization:`Bearer ${token}`} : {}) },
+        body: JSON.stringify(body)
+      });
+    } catch{}
+  }
+  throw new Error('No notes PATCH endpoint');
+}
+async function notesDelete(id, token){
+  for (const b of BASES){
+    const base = b? `/${b}` : '';
+    try {
+      return await fetchJSON(`${base}/notes/${encodeURIComponent(id)}`, {
+        method:'DELETE',
+        headers:{ ...(token? {Authorization:`Bearer ${token}`} : {}) }
+      });
+    } catch{}
+  }
+  throw new Error('No notes DELETE endpoint');
 }
 
 /* ===== Passkey flows ===== */
 async function passkeyRegister(){
   try{
     const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
-    const { data, url } = await waOptions('register', { username });
-    const pk = data?.publicKey || data; if (!pk?.challenge) { log('register/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
+    const { data } = await waOptions('register', { username });
+    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
     if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
     const cred = await navigator.credentials.create({ publicKey: pk });
-    const { data: out, url: vurl } = await waVerify('register', {
+    const { data: out } = await waVerify('register', {
       id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
       response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
     });
-    log('register verify @', vurl, '→', out);
     if (!out?.ok) throw new Error('Registration verify failed');
     alert('Passkey registered.'); saveUser(username);
   }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
@@ -279,16 +313,15 @@ async function passkeyRegister(){
 async function passkeyLogin(){
   try{
     const username = UI.username.value.trim();
-    const { data, url } = await waOptions('login', { username });
-    const pk = data?.publicKey || data; if (!pk?.challenge) { log('login/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
+    const { data } = await waOptions('login', { username });
+    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
     const cred = await navigator.credentials.get({ publicKey: pk });
-    const { data: out, url: vurl } = await waVerify('login', {
+    const { data: out } = await waVerify('login', {
       id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
       response: { authenticatorData: bufToB64url(cred.response.authenticatorData), clientDataJSON: bufToB64url(cred.response.clientDataJSON), signature: bufToB64url(cred.response.signature), userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null }
     });
-    log('login verify @', vurl, '→', out);
     if (!out?.ok) throw new Error('Login verify failed');
     setSession(out.token || 'ok'); UI.authUser.textContent = out.user?.username ? `User: ${out.user.username}` : '';
     if (username) saveUser(username); await loadPosts();
@@ -321,15 +354,18 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const payload = { body: ($('#body')?.value || ''), created_at: new Date().toISOString(), tz };
   try{
-    const j = await api('/notes', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(payload) });
-    log('save →', j); alert('Saved.'); $('#body').value = ''; renderPreview(); await loadPosts();
+    await notesCreate(payload, token);
+    alert('Saved.');
+    $('#body').value = ''; renderPreview();
+    await loadPosts();
   }catch(err){ log('save error:', err?.message || err); alert('Save failed'); }
 });
 async function loadPosts(){
   const token = getSession(); if (!token) return;
   try{
-    const notes = await api('/notes?all=1', { headers:{ 'Authorization': `Bearer ${token}` } });
-    window.__NOTES = Array.isArray(notes) ? notes : []; renderPosts(window.__NOTES);
+    const notes = await notesList(token);
+    window.__NOTES = Array.isArray(notes) ? notes : [];
+    renderPosts(window.__NOTES);
   }catch(e){ log('load posts error →', e?.message || e); postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>'; }
 }
 function renderPosts(notes){
@@ -354,34 +390,24 @@ function renderPosts(notes){
   postsBox.innerHTML = rows;
   postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id'); const hidden = b.getAttribute('data-hidden') === '1'; await toggleHidden(id, !hidden);
+      const id = b.getAttribute('data-id');
+      const hidden = b.getAttribute('data-hidden') === '1';
+      try{ await notesPatch(id, { hidden: !hidden }, getSession()); await loadPosts(); } catch(e){ log('toggle error →', e?.message||e); alert('Failed to toggle'); }
     });
   });
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id'); if (!confirm('Delete this post?')) return; await deletePost(id);
+      const id = b.getAttribute('data-id');
+      if (!confirm('Delete this post?')) return;
+      try{ await notesDelete(id, getSession()); await loadPosts(); } catch(e){ log('delete error →', e?.message||e); alert('Failed to delete'); }
     });
   });
-}
-async function toggleHidden(id, makeHidden){
-  const token = getSession(); if (!token) { alert('Sign in first.'); return; }
-  try{
-    await api(`/notes/${encodeURIComponent(id)}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ hidden: !!makeHidden }) });
-    await loadPosts();
-  }catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
-}
-async function deletePost(id){
-  const token = getSession(); if (!token) { alert('Sign in first.'); return; }
-  try{
-    await api(`/notes/${encodeURIComponent(id)}`, { method:'DELETE', headers:{ 'Authorization': `Bearer ${token}` } });
-    await loadPosts();
-  }catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
 }
 
 /* ===== Init ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
   refreshAuthUI(); renderSavedUsers(); if (getSession()){ await loadPosts(); }
-  localStorage.removeItem('API_BASE'); // ensure old manual base is cleared
+  localStorage.removeItem('API_BASE');
 });
 </script>
 </body>
