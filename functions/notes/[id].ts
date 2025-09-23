@@ -1,51 +1,34 @@
 // functions/notes/[id].ts
 
-/* -------------------------------- utilities -------------------------------- */
 function j(obj: unknown, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 }
-async function readJSON<T = any>(req: Request): Promise<T | null> {
-  try {
-    return await req.json();
-  } catch {
-    return null;
-  }
-}
-function mustEnv(env: any, keys: string[]) {
-  for (const k of keys) if (!env[k]) throw new Error(`missing_env:${k}`);
-}
+async function readJSON<T = any>(req: Request): Promise<T | null> { try { return await req.json(); } catch { return null; } }
+function mustEnv(env: any, keys: string[]) { for (const k of keys) if (!env[k]) throw new Error(`missing_env:${k}`); }
 function b64urlToBytes(s: string) {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
   return Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad), c => c.charCodeAt(0));
 }
 function tryDecodeBody(body: string): string {
   if (typeof body !== "string") return body as any;
-  const looksBase64ish = /^[A-Za-z0-9+/_=-]+$/.test(body.trim());
-  if (!looksBase64ish) return body;
+  const looksB64ish = /^[A-Za-z0-9+/_=-]+$/.test(body.trim());
+  if (!looksB64ish) return body;
   try {
-    // try base64url then base64
-    const txtDecoder = new TextDecoder();
-    try { return txtDecoder.decode(b64urlToBytes(body.trim())); } catch {}
+    const td = new TextDecoder();
+    try { return td.decode(b64urlToBytes(body.trim())); } catch {}
     const bin = atob(body.trim());
-    return txtDecoder.decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
-  } catch {
-    return body;
-  }
+    return td.decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+  } catch { return body; }
 }
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]!));
 
-/* --------------------------------- GET HTML -------------------------------- */
+/* ------------------------------ GET (HTML view) ------------------------------ */
 export const onRequestGet: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SITE_ORIGIN } = ctx.env as any;
   const id = ctx.params.id as string;
 
-  // fetch one note
   const url = new URL(`${SUPABASE_URL}/rest/v1/notes`);
-  url.searchParams.set("select", "id,body,created_at,likes,tz,hidden");
+  url.searchParams.set("select", "id,body,created_at,tz,is_hidden");
   url.searchParams.set("id", `eq.${id}`);
 
   const r = await fetch(url.toString(), {
@@ -108,7 +91,7 @@ export const onRequestGet: PagesFunction = async (ctx) => {
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 };
 
-/* ------------------------------ PATCH / update ------------------------------ */
+/* ------------------------------ PATCH (hide/unhide) ------------------------------ */
 export const onRequestPatch: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
   try {
@@ -119,7 +102,7 @@ export const onRequestPatch: PagesFunction = async (ctx) => {
     if (!body || typeof body !== "object") return j({ error: "invalid_body" }, 400);
 
     const patch: any = {};
-    if ("hidden" in (body as any)) patch.hidden = !!(body as any).hidden;
+    if ("is_hidden" in (body as any)) patch.is_hidden = !!(body as any).is_hidden;
 
     if (Object.keys(patch).length === 0) return j({ error: "no_mutations" }, 400);
 
@@ -142,7 +125,7 @@ export const onRequestPatch: PagesFunction = async (ctx) => {
   }
 };
 
-/* ------------------------------ DELETE / remove ----------------------------- */
+/* ------------------------------ DELETE ------------------------------ */
 export const onRequestDelete: PagesFunction = async (ctx) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY, SERVICE_ROLE } = ctx.env as any;
   try {
@@ -166,20 +149,18 @@ export const onRequestDelete: PagesFunction = async (ctx) => {
   }
 };
 
-/* -------- POST fallback to emulate update/delete when methods are blocked ---- */
+/* ------------------------------ POST fallback ------------------------------ */
 export const onRequestPost: PagesFunction = async (ctx) => {
   const payload = await readJSON(ctx.request);
   const action = payload?.action;
   if (action === "update") {
-    // emulate PATCH
     const req = new Request(ctx.request.url, { method: "PATCH", headers: ctx.request.headers, body: JSON.stringify(payload) });
-    // @ts-ignore re-dispatch inside module
+    // @ts-ignore
     return onRequestPatch({ ...ctx, request: req } as any);
   }
   if (action === "delete") {
-    // emulate DELETE
     const req = new Request(ctx.request.url, { method: "DELETE", headers: ctx.request.headers });
-    // @ts-ignore re-dispatch inside module
+    // @ts-ignore
     return onRequestDelete({ ...ctx, request: req } as any);
   }
   return j({ error: "unsupported_post_action" }, 400);
