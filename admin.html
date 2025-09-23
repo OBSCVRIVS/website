@@ -386,12 +386,16 @@ async function loadPosts(){
 }
 function renderPosts(notes){
   if (!postsBox) return;
-  const visible = showHidden?.checked ? notes : notes.filter(n=>!n.is_hidden);
-  if (!visible.length){ postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>'; return; }
+  const visible = showHidden?.checked ? notes : notes.filter(n => !n.is_hidden);
+  if (!visible.length){
+    postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
+    return;
+  }
+
   const rows = visible.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
-    const body = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
-    const snippet = (body || '').replace(/\s+/g,' ').slice(0, 120);
+    const decoded = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
+    const snippet = decoded.replace(/\s+/g,' ').slice(0, 120);
     return `
       <div style="display:flex;gap:.75rem;align-items:center;padding:.6rem 1rem;border-top:1px solid var(--field-border)">
         <div style="flex:1;overflow:hidden">
@@ -407,18 +411,22 @@ function renderPosts(notes){
       </div>`;
   }).join('');
   postsBox.innerHTML = rows;
+
   postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
       const hidden = b.getAttribute('data-hidden') === '1';
-      try{ await notesPatch(id, { is_hidden: !hidden }); await loadPosts(); } catch(e){ log('toggle error →', e?.message||e); alert('Post failed'); }
+      try { await toggleHidden(id, !hidden); await loadPosts(); }
+      catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
     });
   });
+
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
       if (!confirm('Delete this post?')) return;
-      try{ await notesDelete(id); await loadPosts(); } catch(e){ log('delete error →', e?.message||e); alert('Post failed'); }
+      try { await notesDelete(id); await loadPosts(); }
+      catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
     });
   });
 }
