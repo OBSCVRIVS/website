@@ -366,6 +366,23 @@ $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
 const postsBox = $('#posts-list');
 const showHidden = $('#show-hidden');
 
+/* Decode helper (more aggressive) */
+function tryDecodeBody(s){
+  if (typeof s !== 'string') return s;
+  const clean = s.trim();
+  // If it already looks like readable text, keep it.
+  if (/[A-Za-z]/.test(clean) && /\s/.test(clean) && !/^[A-Za-z0-9+/_=-]+$/.test(clean)) return s;
+  const decodeB64 = (v) => {
+    try{
+      const b64 = v.replace(/-/g,'+').replace(/_/g,'/');
+      const bin = atob(b64);
+      return new TextDecoder().decode(Uint8Array.from(bin, c=>c.charCodeAt(0)));
+    }catch{ return null; }
+  };
+  const d = decodeB64(clean);
+  return d ?? s;
+}
+
 /* CREATE */
 async function notesCreate(payload){
   return api('/api/post', {
@@ -374,11 +391,16 @@ async function notesCreate(payload){
     body: JSON.stringify(payload)
   });
 }
-/* LIST */
-async function notesList(){
-  return api('/api/notes', { method:'GET' });
+
+/* LIST: respect Show hidden checkbox */
+async function notesList(all){
+  const qs = all ? '?all=1' : '';
+  // Try public API first, then /notes
+  try { return await api(`/api/notes${qs}`); } catch {}
+  return await api(`/notes${qs}`);
 }
-/* PATCH with fallbacks */
+
+/* PATCH (hide/unhide) */
 async function notesPatch(id, body){
   const tries = [
     { url: `/notes/${encodeURIComponent(id)}`, method: 'PATCH', body },
@@ -398,7 +420,8 @@ async function notesPatch(id, body){
   }
   throw lastErr || new Error('Patch failed');
 }
-/* DELETE with fallbacks */
+
+/* DELETE */
 async function notesDelete(id){
   const tries = [
     { url: `/notes/${encodeURIComponent(id)}`, method: 'DELETE' },
@@ -418,14 +441,12 @@ async function notesDelete(id){
   throw lastErr || new Error('Delete failed');
 }
 
-/* Decode helper already defined above as tryDecodeBody(s) */
-
-/* TOGGLE must be defined BEFORE renderPosts */
+/* Toggle must exist before renderPosts */
 async function toggleHidden(id, makeHidden){
   return notesPatch(id, { is_hidden: !!makeHidden });
 }
 
-/* Render list + wire buttons */
+/* Render list */
 function renderPosts(notes){
   if (!postsBox) return;
   const visible = showHidden?.checked ? notes : notes.filter(n => !n.is_hidden);
@@ -437,14 +458,14 @@ function renderPosts(notes){
   const rows = visible.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
     const decoded = typeof n.body === 'string' ? tryDecodeBody(n.body) : '';
-    const snippet = decoded.replace(/\s+/g,' ').slice(0, 120);
+    // mirror feed: show full decoded body line
     return `
       <div style="display:flex;gap:.75rem;align-items:center;padding:.6rem 1rem;border-top:1px solid var(--field-border)">
         <div style="flex:1;overflow:hidden">
           <div><strong>${n.id}</strong></div>
           <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when} · ${n.tz || ''}</div>
-          ${snippet ? `<div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${snippet}</div>` : ''}
-          ${n.is_hidden ? '<div class="muted">Hidden</div>' : ''}
+          ${decoded ? `<div style="margin-top:.25rem">${decoded}</div>` : ''}
+          ${n.is_hidden ? '<div class="muted" style="margin-top:.25rem">Hidden</div>' : ''}
         </div>
         <div style="display:flex;gap:.5rem">
           <button class="btn ghost" data-act="toggle" data-id="${n.id}" data-hidden="${n.is_hidden?1:0}">${n.is_hidden?'Unhide':'Hide'}</button>
@@ -473,9 +494,9 @@ function renderPosts(notes){
   });
 }
 
-/* Wire controls for this section */
+/* Wire + load */
 $('#btn-reload')?.addEventListener('click', loadPosts);
-showHidden?.addEventListener('change', ()=> renderPosts(window.__NOTES || []));
+showHidden?.addEventListener('change', ()=> loadPosts());
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -489,7 +510,7 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
 });
 async function loadPosts(){
   try{
-    const notes = await notesList();
+    const notes = await notesList(!!showHidden?.checked);
     window.__NOTES = Array.isArray(notes) ? notes : [];
     renderPosts(window.__NOTES);
   }catch(e){
