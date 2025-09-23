@@ -1,88 +1,92 @@
 /* ============================================================
    HEADER / NAV
    ============================================================ */
-.banner {
-  position: relative;
-  width: 100%;
-  height: 220px;              /* shorter banner */
-  overflow: hidden;
+.banner{
+  position:relative;
+  width:100%;
+  height:200px;                 /* shorter banner */
+  overflow:hidden;
 }
-@media (min-width: 1000px){ .banner { height: 260px; } }
-.banner img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+@media (min-width:1000px){
+  .banner{ height:240px; }
+}
+.banner > img{
+  width:100%;
+  height:100%;
+  object-fit:cover;             /* no stretching; fill crop */
+  display:block;
 }
 
-.site-nav {
-  background: var(--bg);
-  border-bottom: 1px solid var(--field-border);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+.site-nav{
+  background:var(--bg);
+  border-bottom:1px solid var(--field-border);
+  position:sticky;
+  top:0;
+  z-index:10;
 }
-.site-nav__inner {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: .75rem 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.site-nav__inner{
+  max-width:960px;
+  margin:0 auto;
+  padding:.75rem 1rem;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
 }
-.site-nav a {
-  text-decoration: none;
-  font-weight: 600;
-  color: var(--ink);
+.site-nav a{
+  text-decoration:none;
+  font-weight:600;
+  color:var(--ink);
 }
-.site-nav a.nav-link {
-  margin-left: 1rem;
-  color: var(--accent);
+.site-nav a.nav-link{
+  margin-left:1rem;
+  color:var(--accent);
 }
 
 /* ============================================================
    HERO (centered; avatar overlaps banner)
    ============================================================ */
-.hero {
-  max-width: 960px;
-  margin: -64px auto 2rem;    /* pull hero up to overlap banner ~50% of avatar */
-  padding: 0 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: .75rem;
-  text-align: center;
+.hero{
+  max-width:960px;
+  margin:-60px auto 2rem;       /* pull hero up to overlap avatar */
+  padding:0 1rem;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:.75rem;
+  text-align:center;
+}
+@media (max-width:700px){
+  .hero{ margin:-48px auto 1.5rem; }
 }
 
-.hero .avatar {
-  width: 128px;
-  height: 128px;
-  border-radius: 50%;
-  border: 3px solid var(--accent);
-  object-fit: cover;
-  box-shadow: 0 0 0 4px var(--bg);  /* halo cutout so it sits on the banner cleanly */
+.hero .avatar{
+  width:128px;
+  height:128px;
+  border-radius:50%;
+  border:3px solid var(--accent); /* keep your red ring */
+  object-fit:cover;
+  box-shadow:0 0 0 4px var(--bg); /* halo so it sits cleanly on banner */
 }
 
-.hero-meta h1 {
-  margin: .75rem 0 .25rem;    /* tighter gap under the overlap */
-  font-size: 2rem;
+.hero-meta{
+  max-width:720px;              /* keep text line length tidy */
 }
-.tagline { margin: 0 0 .5rem; color: var(--muted); }
-
-.social ul {
-  list-style: none;
-  margin: .25rem 0 0;
-  padding: 0;
-  display: flex;
-  gap: .75rem;
-  justify-content: center;
+.hero-meta h1{
+  margin:.6rem 0 .25rem;        /* tighten gap under avatar */
+  font-size:2rem;
+}
+.tagline{
+  margin:0 0 .5rem;
+  color:var(--muted);
 }
 
-/* ============================================================
-   (remove old profile-header overrides)
-   ============================================================ */
-/* Top nav pinned to the very top */
-.site-nav--top { border-bottom: 1px solid var(--field-border); }
+.social ul{
+  list-style:none;
+  margin:.25rem 0 0;
+  padding:0;
+  display:flex;
+  gap:.75rem;
+  justify-content:center;
+}
 
-/* DELETE any previous .profile-header*, .avatar--overlap, and
-   .profile-header .hero-meta rules if they still exist */
+/* (no profile-header rules needed; keep the rest of your CSS) */
