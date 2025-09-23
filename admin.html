@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
-  <!-- Prevent theme flash -->
   <script>
     (function(){
       var t = localStorage.getItem('theme') || 'auto';
@@ -18,7 +17,6 @@
     })();
   </script>
 
-  <!-- Markdown + Sanitizer -->
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 </head>
@@ -38,15 +36,6 @@
   <!-- Auth -->
   <section class="card" style="margin-bottom:1rem">
     <h2 style="margin-top:0">Authentication</h2>
-
-    <!-- API base control -->
-    <div style="margin:.5rem 0 1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-      <label class="muted">API Base:</label>
-      <input id="api-base" type="text" placeholder="/api or https://domain/api" style="min-width:26rem">
-      <button id="api-save" class="btn ghost" type="button">Save</button>
-      <span class="muted" id="api-current"></span>
-    </div>
-
     <div class="grid-2">
       <div>
         <label>
@@ -116,47 +105,23 @@
 </main>
 
 <script>
-/* ============================================================
-   Utils
-   ============================================================ */
+/* ===== Utils ===== */
 const $ = s => document.querySelector(s);
 const dbg = $('#debug');
 function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
 
-/* ============================================================
-   API base + robust fetch (NO duplicates)
-   ============================================================ */
-function getDefaultApiBase(){
-  const ls = localStorage.getItem('API_BASE');
-  if (ls) return ls;
-  return window.location.origin; // functions are at /webauthn/* (no /api prefix)
-}
-let API_BASE = getDefaultApiBase();
-function setApiBase(v){ API_BASE = v.replace(/\/$/,''); localStorage.setItem('API_BASE', API_BASE); renderApiBase(); }
-
+/* ===== API (origin-based, no manual base) ===== */
+const ORIGIN = window.location.origin;
 async function api(path, opts={}){
-  const url = `${API_BASE}/${String(path).replace(/^\//,'')}`;
+  const url = `${ORIGIN}/${String(path).replace(/^\//,'')}`;
   const res = await fetch(url, opts);
   const raw = await res.text();
   let data; try { data = JSON.parse(raw); } catch { data = { raw }; }
-  if (!res.ok){
-    const msg = `${res.status} ${res.statusText} @ ${url}\n${raw}`;
-    log('API error →', msg);
-    throw new Error(msg);
-  }
+  if (!res.ok){ const msg = `${res.status} ${res.statusText} @ ${url}`; log('API error →', msg); throw new Error(msg); }
   return data;
 }
-function renderApiBase(){
-  const input = $('#api-base'), cur = $('#api-current');
-  if (input) input.value = API_BASE;
-  if (cur) cur.textContent = `Current: ${API_BASE}`;
-}
-$('#api-save')?.addEventListener('click', ()=> setApiBase($('#api-base').value.trim()));
-document.addEventListener('DOMContentLoaded', renderApiBase);
 
-/* ============================================================
-   Time format
-   ============================================================ */
+/* ===== Time ===== */
 function fmtLocal(iso, tz){
   const d = new Date(iso);
   const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -167,9 +132,7 @@ function fmtLocal(iso, tz){
   return `${ds} ${ts} ${tzLabel}`;
 }
 
-/* ============================================================
-   Theme engine
-   ============================================================ */
+/* ===== Theme ===== */
 (function () {
   const CONFIG = { lat: 34.0522, lon: -118.2437 };
   const selectEl = $("#theme-select");
@@ -179,65 +142,40 @@ function fmtLocal(iso, tz){
     const J2000 = 946684800000;
     const n = Math.round(((dateUTC - J2000)/dayMs) - (lon/360));
     const Jstar = n + lon/360 + 0.0008 + (2440587.5 - 2451545);
-    function solNoon(){
-      const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+    function solNoon(){ const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
       const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
       const L = (M + 102.9372 + C + 180) % 360;
-      return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
-    }
-    function hourAngle(){
-      const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
+      return 2451545 + Jstar + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad); }
+    function hourAngle(){ const M = (357.5291 + 0.98560028 * (Jstar - 2451545)) % 360;
       const C = 1.9148*Math.sin(M*rad) + 0.0200*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
       const L = (M + 102.9372 + C + 180) % 360;
       const δ = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
       const φ = lat*rad, h0 = (-6)*rad;
       const cosH = (Math.sin(h0) - Math.sin(φ)*Math.sin(δ)) / (Math.cos(φ)*Math.cos(δ));
-      if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH);
-    }
-    function jdToDate(jd){ return new Date((jd - 2440587.5)*dayMs); }
-    const Jnoon = solNoon();
-    const H = hourAngle();
-    const Jrise = Jnoon - (H/(2*Math.PI));
-    const Jset  = Jnoon + (H/(2*Math.PI));
-    return { sunrise: jdToDate(Jrise), sunset: jdToDate(Jset) };
+      if (cosH <= -1) return Math.PI; if (cosH >= 1) return 0; return Math.acos(cosH); }
+    function jdToDate(jd){ return new Date((jd - 2440587.5)*86400000); }
+    const Jnoon = solNoon(); const H = hourAngle();
+    return { sunrise: jdToDate(Jnoon - (H/(2*Math.PI))), sunset: jdToDate(Jnoon + (H/(2*Math.PI))) };
   }
-  function isNightNow(lat, lon){
-    const now = new Date();
-    const { sunrise, sunset } = sunTimes(now, lat, lon);
-    return (now < sunrise) || (now > sunset);
-  }
-  function systemPrefersDark(){
-    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
+  function isNightNow(lat, lon){ const now = new Date(); const { sunrise, sunset } = sunTimes(now, lat, lon); return (now < sunrise) || (now > sunset); }
+  function systemPrefersDark(){ return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; }
   function applyTheme(theme){
     const html = document.documentElement;
-    let resolved = theme;
-    if (theme === "auto") {
-      try { resolved = isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light"; }
-      catch { resolved = systemPrefersDark() ? "dark" : "light"; }
-    }
+    let resolved = theme === "auto" ? (isNightNow(CONFIG.lat, CONFIG.lon) ? "dark" : "light") : theme;
+    if (theme === "auto") { try{}catch{} if (!resolved) resolved = systemPrefersDark() ? "dark" : "light"; }
     html.setAttribute("data-theme", resolved);
     const bg = getComputedStyle(html).getPropertyValue("--bg").trim();
-    let meta = document.querySelector('meta[name="theme-color"]');
-    if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
+    let meta = document.querySelector('meta[name="theme-color"]'); if (!meta) { meta = document.createElement("meta"); meta.name = "theme-color"; document.head.appendChild(meta); }
     meta.setAttribute("content", bg);
   }
-  const saved = localStorage.getItem("theme") || "auto";
-  applyTheme(saved);
+  const saved = localStorage.getItem("theme") || "auto"; applyTheme(saved);
   selectEl?.addEventListener("change", (e) => { const v = e.target.value; localStorage.setItem("theme", v); applyTheme(v); });
-  if (window.matchMedia) {
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-      if ((localStorage.getItem("theme") || "auto") === "auto") applyTheme("auto");
-    });
-  }
+  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if ((localStorage.getItem("theme") || "auto") === "auto") applyTheme("auto"); });
   setInterval(() => { if ((localStorage.getItem("theme") || "auto") === "auto") applyTheme("auto"); }, 3600000);
 })();
 
-/* ============================================================
-   Markdown preview
-   ============================================================ */
-const bodyEl = $('#body');
-const previewEl = $('#preview');
+/* ===== Markdown preview ===== */
+const bodyEl = $('#body'); const previewEl = $('#preview');
 function renderPreview(){
   if (!bodyEl || !previewEl) return;
   marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
@@ -247,246 +185,150 @@ function renderPreview(){
 }
 document.addEventListener('DOMContentLoaded', () => { bodyEl?.addEventListener('input', renderPreview); renderPreview(); });
 
-/* ============================================================
-   Session + auth UI
-   ============================================================ */
+/* ===== Session + auth UI ===== */
 const UI = {
-  composer: $('#composer'),
-  posts: $('#posts'),
-  authState: $('#auth-state'),
-  authUser: $('#auth-user'),
-  btnRegister: $('#btn-register'),
-  btnLogin: $('#btn-login'),
-  btnLogout: $('#btn-logout'),
-  username: $('#username'),
-  remembered: $('#remembered')
+  composer: $('#composer'), posts: $('#posts'),
+  authState: $('#auth-state'), authUser: $('#auth-user'),
+  btnRegister: $('#btn-register'), btnLogin: $('#btn-login'), btnLogout: $('#btn-logout'),
+  username: $('#username'), remembered: $('#remembered')
 };
-const SESSION_KEY = 'admin_token';
-const USERS_KEY = 'admin_usernames';
+const SESSION_KEY = 'admin_token'; const USERS_KEY = 'admin_usernames';
 function getSession(){ return localStorage.getItem(SESSION_KEY) || null; }
 function setSession(token){ if (token) localStorage.setItem(SESSION_KEY, token); else localStorage.removeItem(SESSION_KEY); refreshAuthUI(); }
 function getSavedUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; } }
 function saveUser(u){ if (!u) return; const set = new Set(getSavedUsers().concat([u])); localStorage.setItem(USERS_KEY, JSON.stringify([...set])); renderSavedUsers(); }
-function renderSavedUsers(){
-  const list = getSavedUsers();
-  if (!UI.remembered) return;
+function renderSavedUsers(){ const list = getSavedUsers(); if (!UI.remembered) return;
   if (!list.length){ UI.remembered.innerHTML = ''; return; }
   UI.remembered.innerHTML = '<div class="muted">Quick login:</div>' + list.map(u => `<button class="btn ghost" data-u="${u}">${u}</button>`).join(' ');
   UI.remembered.querySelectorAll('button').forEach(b=>{ b.addEventListener('click', ()=>{ UI.username.value = b.dataset.u; passkeyLogin(); }); });
 }
-function refreshAuthUI(){
-  const authed = !!getSession();
+function refreshAuthUI(){ const authed = !!getSession();
   UI.composer.style.display = authed ? 'block' : 'none';
   UI.posts.style.display = authed ? 'block' : 'none';
   UI.authState.textContent = authed ? 'Signed in' : 'Signed out';
 }
 
-/* ============================================================
-   WebAuthn helpers
-   ============================================================ */
-function b64urlToBuf(b64url){
-  const pad = '='.repeat((4 - b64url.length % 4) % 4);
-  const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad;
-  const raw = atob(b64);
-  const buf = new ArrayBuffer(raw.length);
-  const view = new Uint8Array(buf);
-  for (let i=0;i<raw.length;i++) view[i] = raw.charCodeAt(i);
-  return buf;
+/* ===== WebAuthn helpers ===== */
+function b64urlToBuf(b64url){ const pad = '='.repeat((4 - b64url.length % 4) % 4);
+  const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad; const raw = atob(b64);
+  const buf = new ArrayBuffer(raw.length); const view = new Uint8Array(buf);
+  for (let i=0;i<raw.length;i++) view[i] = raw.charCodeAt(i); return buf; }
+function bufToB64url(buf){ const bytes = new Uint8Array(buf); let bin=''; for (let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+
+/* ===== Endpoint resolver (tries both root and /api) ===== */
+const BASES = ['', 'api']; // '' → root, matches your functions/webauthn/*
+async function fetchJSON(url, init){ return api(url, init); }
+async function waOptions(flow, payload){
+  const attempts=[];
+  for (const b of BASES){
+    const base = b? `/${b}` : '';
+    // POST .../options then GET fallback
+    const postUrl = `${base}/webauthn/${flow}/options`;
+    try { return { data: await fetchJSON(postUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: postUrl }; }
+    catch(e){ attempts.push(`POST ${postUrl} → ${e.message}`); }
+    try { return { data: await fetchJSON(postUrl, { method:'GET' }), url: postUrl }; }
+    catch(e){ attempts.push(`GET ${postUrl} → ${e.message}`); }
+    // Single-endpoint form
+    const singleUrl = `${base}/webauthn/${flow}`;
+    try { return { data: await fetchJSON(singleUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: singleUrl }; }
+    catch(e){ attempts.push(`POST ${singleUrl} → ${e.message}`); }
+  }
+  log('waOptions attempts:', attempts); throw new Error('No options endpoint');
 }
-function bufToB64url(buf){
-  const bytes = new Uint8Array(buf);
-  let bin = ''; for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function waVerify(flow, payload){
+  const attempts=[];
+  for (const b of BASES){
+    const base = b? `/${b}` : '';
+    const verifyUrl = `${base}/webauthn/${flow}/verify`;
+    try { return { data: await fetchJSON(verifyUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: verifyUrl }; }
+    catch(e){ attempts.push(`POST ${verifyUrl} → ${e.message}`); }
+    const singleUrl = `${base}/webauthn/${flow}`;
+    try { return { data: await fetchJSON(singleUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }), url: singleUrl }; }
+    catch(e){ attempts.push(`POST ${singleUrl} → ${e.message}`); }
+  }
+  log('waVerify attempts:', attempts); throw new Error('No verify endpoint');
 }
 
-/* ============================================================
-   WebAuthn endpoint resolver (handles 405/404 variants)
-   ============================================================ */
-// Try multiple bases and shapes. Return raw JSON plus which URL worked.
-const TRY_BASES = ['/webauthn']; // your repo has functions/webauthn/* // adjust if your CF Pages functions folder differs
-async function waOptions(flow /* 'register'|'login' */, payload) {
-  const attempts = [];
-  for (const base of TRY_BASES) {
-    const roots = [
-      `${base}/${flow}/options`, // POST or GET
-      `${base}/${flow}`          // POST
-    ];
-    // POST .../options
-    for (const url of roots) {
-      try {
-        const res = await api(url, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(payload)
-        });
-        return { data: res, base, url, method:'POST' };
-      } catch (e) {
-        attempts.push(`POST ${url} → ${e.message}`);
-      }
-      // GET .../options fallback
-      if (url.endsWith('/options')) {
-        try {
-          const res = await api(url, { method:'GET' });
-          return { data: res, base, url, method:'GET' };
-        } catch (e2) {
-          attempts.push(`GET ${url} → ${e2.message}`);
-        }
-      }
-    }
-  }
-  log('waOptions attempts:', attempts);
-  throw new Error('Could not resolve options endpoint');
-}
-async function waVerify(flow /* 'register'|'login' */, payload) {
-  const attempts = [];
-  for (const base of TRY_BASES) {
-    const targets = [
-      `${base}/${flow}/verify`, // POST
-      `${base}/${flow}`         // POST on base as fallback
-    ];
-    for (const url of targets) {
-      try {
-        const res = await api(url, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(payload)
-        });
-        return { data: res, url };
-      } catch (e) {
-        attempts.push(`POST ${url} → ${e.message}`);
-      }
-    }
-  }
-  log('waVerify attempts:', attempts);
-  throw new Error('Could not resolve verify endpoint');
-}
-
-/* ============================================================
-   Passkey flows (Pages Functions use /webauthn/...)
-   ============================================================ */
+/* ===== Passkey flows ===== */
 async function passkeyRegister(){
   try{
-    const username = UI.username.value.trim();
-    if (!username) { alert('Enter a username.'); return; }
-
+    const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
     const { data, url } = await waOptions('register', { username });
-    const pk = data?.publicKey || data;
-    if (!pk || !pk.challenge) { log('register/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
-
+    const pk = data?.publicKey || data; if (!pk?.challenge) { log('register/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
     if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-
     const cred = await navigator.credentials.create({ publicKey: pk });
-
     const { data: out, url: vurl } = await waVerify('register', {
-      id: cred.id,
-      rawId: bufToB64url(cred.rawId),
-      type: cred.type,
-      response: {
-        attestationObject: bufToB64url(cred.response.attestationObject),
-        clientDataJSON: bufToB64url(cred.response.clientDataJSON)
-      }
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
     });
     log('register verify @', vurl, '→', out);
     if (!out?.ok) throw new Error('Registration verify failed');
-    alert('Passkey registered.');
-    saveUser(username);
+    alert('Passkey registered.'); saveUser(username);
   }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
 }
-
 async function passkeyLogin(){
   try{
     const username = UI.username.value.trim();
-
     const { data, url } = await waOptions('login', { username });
-    const pk = data?.publicKey || data;
-    if (!pk || !pk.challenge) { log('login/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
-
+    const pk = data?.publicKey || data; if (!pk?.challenge) { log('login/options payload:', data, 'from', url); throw new Error('No publicKey in response'); }
     pk.challenge = b64urlToBuf(pk.challenge);
     if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-
     const cred = await navigator.credentials.get({ publicKey: pk });
-
     const { data: out, url: vurl } = await waVerify('login', {
-      id: cred.id,
-      rawId: bufToB64url(cred.rawId),
-      type: cred.type,
-      response: {
-        authenticatorData: bufToB64url(cred.response.authenticatorData),
-        clientDataJSON: bufToB64url(cred.response.clientDataJSON),
-        signature: bufToB64url(cred.response.signature),
-        userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null
-      }
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      response: { authenticatorData: bufToB64url(cred.response.authenticatorData), clientDataJSON: bufToB64url(cred.response.clientDataJSON), signature: bufToB64url(cred.response.signature), userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null }
     });
     log('login verify @', vurl, '→', out);
-    if (!out?.ok || !out?.token) throw new Error('Login verify failed');
-    setSession(out.token);
-    UI.authUser.textContent = out.user?.username ? `User: ${out.user.username}` : '';
-    if (username) saveUser(username);
-    await loadPosts();
+    if (!out?.ok) throw new Error('Login verify failed');
+    setSession(out.token || 'ok'); UI.authUser.textContent = out.user?.username ? `User: ${out.user.username}` : '';
+    if (username) saveUser(username); await loadPosts();
   }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
 }
-/* ============================================================
-   Wire buttons
-   ============================================================ */
+
+/* ===== Wire ===== */
 UI.btnRegister?.addEventListener('click', passkeyRegister);
 UI.btnLogin?.addEventListener('click', passkeyLogin);
 UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
 renderSavedUsers(); refreshAuthUI();
 
-/* ============================================================
-   Debug
-   ============================================================ */
+/* ===== Debug ===== */
 $('#dbg-ping')?.addEventListener('click', async ()=>{
-  try{ const j = await api('/health'); log('ping →', j); }
-  catch(e){ log('ping error →', e?.message || e); }
+  const tries = ['/health','/api/health'];
+  for (const t of tries) {
+    try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); }
+  }
 });
-$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), API_BASE }));
+$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), origin: ORIGIN }));
 $('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
 
-/* ============================================================
-   Notes
-   ============================================================ */
-const postsBox = $('#posts-list');
-const showHidden = $('#show-hidden');
+/* ===== Notes ===== */
+const postsBox = $('#posts-list'); const showHidden = $('#show-hidden');
 $('#btn-reload')?.addEventListener('click', loadPosts);
 showHidden?.addEventListener('change', ()=> renderPosts(window.__NOTES || []));
-
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const token = getSession(); if (!token) { alert('Sign in first.'); return; }
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const payload = { body: ($('#body')?.value || ''), created_at: new Date().toISOString(), tz };
   try{
-    const j = await api('/notes', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(payload)
-    });
-    log('save →', j);
-    alert('Saved.');
-    $('#body').value = ''; renderPreview();
-    await loadPosts();
+    const j = await api('/notes', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(payload) });
+    log('save →', j); alert('Saved.'); $('#body').value = ''; renderPreview(); await loadPosts();
   }catch(err){ log('save error:', err?.message || err); alert('Save failed'); }
 });
-
 async function loadPosts(){
   const token = getSession(); if (!token) return;
   try{
     const notes = await api('/notes?all=1', { headers:{ 'Authorization': `Bearer ${token}` } });
-    window.__NOTES = Array.isArray(notes) ? notes : [];
-    renderPosts(window.__NOTES);
+    window.__NOTES = Array.isArray(notes) ? notes : []; renderPosts(window.__NOTES);
   }catch(e){ log('load posts error →', e?.message || e); postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>'; }
 }
-
 function renderPosts(notes){
   if (!postsBox) return;
   const visible = showHidden?.checked ? notes : notes.filter(n=>!n.hidden);
-  if (!visible.length){
-    postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
-    return;
-  }
+  if (!visible.length){ postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>'; return; }
   const rows = visible.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
     return `
@@ -503,55 +345,37 @@ function renderPosts(notes){
       </div>`;
   }).join('');
   postsBox.innerHTML = rows;
-
   postsBox.querySelectorAll('button[data-act="toggle"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id');
-      const hidden = b.getAttribute('data-hidden') === '1';
-      await toggleHidden(id, !hidden);
+      const id = b.getAttribute('data-id'); const hidden = b.getAttribute('data-hidden') === '1'; await toggleHidden(id, !hidden);
     });
   });
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id');
-      if (!confirm('Delete this post?')) return;
-      await deletePost(id);
+      const id = b.getAttribute('data-id'); if (!confirm('Delete this post?')) return; await deletePost(id);
     });
   });
 }
-
 async function toggleHidden(id, makeHidden){
   const token = getSession(); if (!token) { alert('Sign in first.'); return; }
   try{
-    const j = await api(`/notes/${encodeURIComponent(id)}`, {
-      method:'PATCH',
-      headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ hidden: !!makeHidden })
-    });
-    log('toggle →', j);
+    await api(`/notes/${encodeURIComponent(id)}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ hidden: !!makeHidden }) });
     await loadPosts();
   }catch(e){ log('toggle error →', e?.message || e); alert('Failed to toggle'); }
 }
-
 async function deletePost(id){
   const token = getSession(); if (!token) { alert('Sign in first.'); return; }
   try{
-    const j = await api(`/notes/${encodeURIComponent(id)}`, {
-      method:'DELETE',
-      headers:{ 'Authorization': `Bearer ${token}` }
-    });
-    log('delete →', j);
+    await api(`/notes/${encodeURIComponent(id)}`, { method:'DELETE', headers:{ 'Authorization': `Bearer ${token}` } });
     await loadPosts();
   }catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
 }
 
-/* ============================================================
-   Init
-   ============================================================ */
+/* ===== Init ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
-  refreshAuthUI();
-  renderSavedUsers();
-  if (getSession()){ await loadPosts(); }
+  refreshAuthUI(); renderSavedUsers(); if (getSession()){ await loadPosts(); }
+  // safety: drop any old manual base
+  localStorage.removeItem('API_BASE');
 });
 </script>
 </body>
