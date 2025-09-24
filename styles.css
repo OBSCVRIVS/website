@@ -320,3 +320,14 @@ button{ font:inherit; cursor:pointer }
   :root{ --avatar: 96px; }
   .profile-header__inner .hero-meta{ padding-top: calc(0.5 * var(--avatar) + 6px); }
 }
+
+a.permalink {
+  font-size: 0.95rem;       /* slightly smaller, inline with text */
+  text-decoration: none;    /* no underline */
+  color: var(--muted);      /* gray by default */
+  vertical-align: middle;   /* keeps icon aligned with text baseline */
+}
+
+a.permalink:hover {
+  color: var(--accent);     /* red on hover */
+}
