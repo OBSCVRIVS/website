@@ -7,12 +7,14 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
-  <!-- Minimal, page-scoped styles so layout/icon don't rely on site CSS -->
+  <!-- Minimal, page-scoped styles for layout + icon -->
   <style>
     .admin-wrap { max-width: 960px; margin: 2rem auto; padding: 1rem; }
     .admin-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
     .admin-grid2 { display:grid; gap:1rem; grid-template-columns:1fr 1fr; }
     .admin-card { border:1px solid var(--field-border); padding:1rem; border-radius:4px; background:var(--field); }
+    #posts-list .tweet { border: 0; border-top: 1px solid var(--field-border); margin: 0; }
+    #posts-list .tweet:first-child { border-top: 0; }
     .permalink{ color:var(--muted); text-decoration:none; display:inline-flex; align-items:center; }
     .permalink:hover,.permalink:focus{ color:var(--accent); text-decoration:none; }
     .permalink svg{ width:16px; height:16px; display:block; }
@@ -260,14 +262,13 @@ function renderPosts(notes){
             <div class="tweet__text">${mdRender(n.body)}</div>
           </div>
           <div style="flex:1;display:flex;justify-content:flex-end;align-items:flex-start;gap:.5rem">
-            <!-- NOTE: absolute path to avoid relative 'Upstream error' issues -->
-           <a class="permalink" href="/notes/${n.id}" aria-label="Permalink">
-  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
-    <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
-  </svg>
-  <span class="sr-only">Permalink</span>
-</a>
+            <a class="permalink" href="/notes/${n.id}" aria-label="Permalink">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
+                <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
+              </svg>
+              <span class="sr-only">Permalink</span>
+            </a>
             <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
           </div>
         </div>
