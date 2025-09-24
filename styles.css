@@ -270,3 +270,53 @@ button{ font:inherit; cursor:pointer }
   .avatar--overlap{ width:88px; height:88px; bottom:-44px; left:1rem; }
   .profile-header .hero-meta{ padding-top:56px; }
 }
+
+/* === Tight hero alignment + avatar placement (overrides) === */
+:root{
+  /* tweak these two to fine-tune quickly */
+  --container: 720px;      /* content width (matches About/Notes) */
+  --gutter: 1rem;          /* left padding inside the container */
+  --avatar: 120px;         /* avatar size – change to match your green circle */
+}
+
+/* Make header content use the same column as About/Notes */
+.profile-header__inner{
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  position: relative;      /* for absolute avatar */
+}
+
+/* Avatar: pinned to the upper-left corner, overlapping the banner seam */
+.avatar--overlap{
+  position: absolute;
+  left: var(--gutter);              /* exact same left as text column */
+  top: calc(-0.5 * var(--avatar));  /* overlap by ~50% */
+  width: var(--avatar);
+  height: var(--avatar);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--bg);  /* white halo */
+}
+
+/* Kill any leftover left offset and align hero text with the column */
+.profile-header__inner .hero-meta{
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+  padding-top: calc(0.5 * var(--avatar) + 8px); /* clears the overlap */
+  text-align: left;
+}
+
+/* Ensure the rest of the site uses the same column */
+.about, .feed{
+  max-width: var(--container);
+  margin: 1.5rem auto;
+  padding: 0 var(--gutter);
+}
+
+/* Small screens: keep alignment, scale avatar slightly */
+@media (max-width: 560px){
+  :root{ --avatar: 96px; }
+  .profile-header__inner .hero-meta{ padding-top: calc(0.5 * var(--avatar) + 6px); }
+}
