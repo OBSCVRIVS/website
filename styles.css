@@ -179,3 +179,59 @@ button{ font:inherit; cursor:pointer }
 .tweet__text blockquote{
   margin:.6em 0; padding-left:.75em; border-left:3px solid var(--accent); color:var(--muted);
 }
+
+/* ===== POLISH OVERRIDES (paste at end) ===== */
+
+/* Top nav: a bit tighter */
+.site-nav__inner { padding: .55rem 1rem; gap: .75rem; }
+.site-nav .brand { letter-spacing: .2px; }
+
+/* Banner: shorter, social-profile feel */
+.profile-header .banner { height: 180px; }
+@media (max-width: 900px){ .profile-header .banner { height: 160px; } }
+.profile-header .banner > img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Avatar: smaller, clean overlap */
+.avatar--overlap {
+  width: 96px; height: 96px;
+  border-width: 2px;               /* slimmer ring */
+  left: 1rem; bottom: -48px;       /* ~50% overlap */
+  box-shadow: 0 0 0 4px var(--bg); /* halo cutout */
+  object-fit: cover; border-radius: 50%;
+}
+
+/* Meta block left-aligned beside avatar */
+.profile-header__inner { max-width: 960px; padding: 0 1rem; }
+.profile-header .hero-meta {
+  margin-left: calc(1rem + 110px); /* clears avatar */
+  padding-top: 56px;               /* clears overlap */
+  text-align: left;
+}
+.profile-header .hero-meta h1 { margin: .15rem 0 0; font-size: 1.9rem; line-height: 1.15; }
+.profile-header .tagline { margin: .35rem 0 0; font-size: .9rem; color: var(--muted); }
+
+/* Social row tidy */
+.hero-meta .social ul { display: flex; gap: .75rem; padding: 0; margin: .5rem 0 0; list-style: none; }
+.hero-meta .social a { text-decoration: none; }
+.hero-meta .social a:hover { text-decoration: underline; }
+
+/* About spacing */
+.about { max-width: 720px; margin: 1.25rem auto 1.5rem; }
+.about h2 { margin: .2rem 0 .5rem; font-size: 1.05rem; }
+
+/* Notes: quieter rhythm */
+.feed { max-width: 720px; margin: 1.5rem auto 2rem; }
+.tweet { padding: .85rem 0; }
+.tweet__avatar img { width: 44px; height: 44px; border-radius: 50%; }
+.tweet__actions .permalink { margin-left: auto; color: var(--muted); }
+.tweet__actions .permalink:hover { color: var(--accent); }
+
+/* Footer: lighter */
+.footer { margin-top: 2.5rem; padding: .75rem 1rem; font-size: .9rem; }
+
+/* Mobile stacking */
+@media (max-width: 560px){
+  .avatar--overlap { width: 88px; height: 88px; bottom: -44px; left: 1rem; }
+  .profile-header .hero-meta { margin-left: 1rem; padding-top: 56px; }
+  .profile-header .hero-meta h1 { font-size: 1.6rem; }
+}
