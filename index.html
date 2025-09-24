@@ -179,11 +179,7 @@
           </div>
         `;
 
-        card.addEventListener('click', (ev) => {
-          if (ev.target.closest('a,button')) return;
-          card.classList.toggle('expanded');
-        });
-
+      
         container.appendChild(card);
       });
 
