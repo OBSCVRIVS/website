@@ -301,3 +301,61 @@ input, textarea{ caret-color: var(--accent); }
 .grid-2{ display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
 .flex-between{ display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .card{ border: 1px solid var(--field-border); padding: 1rem; border-radius: 4px; background: var(--field); }
+
+/* ==== HERO ALIGNMENT FIX (override) ==== */
+.hero{
+  max-width: 960px;
+  margin: -56px auto 1.25rem;     /* overlap banner a bit */
+  padding: 0 1rem;
+  display: flex;                   /* switch from grid → flex */
+  align-items: center;             /* vertically align avatar + text */
+  gap: 1rem;
+}
+
+.hero .avatar{
+  flex: 0 0 112px;                 /* fixed column for the avatar */
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--bg);
+}
+
+.hero-meta{
+  padding: 0;                      /* remove extra bottom padding */
+  transform: translateY(2px);      /* tiny optical nudge */
+}
+
+.hero-meta h1{
+  margin: 0 0 .2rem;
+  font-size: 1.75rem;              /* slightly smaller for balance */
+  line-height: 1.15;
+}
+
+.tagline{
+  margin: 0 0 .4rem;
+  color: var(--muted);
+  font-size: .95rem;
+}
+
+.social ul{
+  list-style: none;
+  margin: .1rem 0 0;
+  padding: 0;
+  display: flex;
+  gap: .75rem;
+}
+
+/* Stack nicely on small screens */
+@media (max-width: 560px){
+  .hero{
+    flex-direction: column;
+    align-items: flex-start;
+    margin: -56px auto 1.25rem;
+    gap: .6rem;
+  }
+  .hero .avatar{ width: 96px; height: 96px; }
+  .hero-meta{ transform: none; }
+  .hero-meta h1{ font-size: 1.5rem; }
+}
