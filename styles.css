@@ -331,3 +331,30 @@ a.permalink {
 a.permalink:hover {
   color: var(--accent);     /* red on hover */
 }
+
+/* Permalink icon */
+.permalink{
+  color: var(--muted);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.permalink:hover,
+.permalink:focus{
+  color: var(--accent);
+  text-decoration: none;
+}
+.permalink svg{
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* a11y helper for hidden text */
+.sr-only{
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
