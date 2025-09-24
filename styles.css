@@ -120,7 +120,7 @@ a:hover,a:focus{text-decoration-thickness:.14em}
   border-bottom:1px solid var(--field-border);
   cursor:pointer;
 }
-.tweet.expanded{ background:color-mix(in srgb, var(--accent) 6%, transparent) }
+.tweet.expanded { background: transparent; }
 .tweet__avatar img{ width:48px; height:48px; border-radius:50% }
 .tweet__body{ flex:1 }
 .tweet__head{ font-size:.92rem; margin-bottom:.3rem }
