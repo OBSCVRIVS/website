@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Note · Levi Carver</title>
+  <link rel="stylesheet" href="/styles.css">
+  <meta name="theme-color" content="#FFFFFF">
+
+  <!-- libs -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
+</head>
+<body>
+  <!-- Top nav -->
+  <nav class="site-nav site-nav--top" aria-label="Site">
+    <div class="site-nav__inner">
+      <a class="brand" href="/">Levi Carver</a>
+      <a class="nav-link" href="/contact.html">Contact</a>
+    </div>
+  </nav>
+
+  <!-- Single note -->
+  <main class="feed" style="max-width:720px">
+    <a href="/?note=" id="backlink" class="btn ghost" style="margin:.75rem 0 .25rem; display:inline-block">← Back to feed</a>
+    <article id="note" class="tweet" style="cursor:auto"></article>
+  </main>
+
+  <footer class="footer" role="contentinfo">
+    <small>© 2025 Levi Carver · <a href="/contact.html">Contact</a></small>
+  </footer>
+
+<script>
+(function(){
+  // theme by local clock (same as index)
+  const LIGHT_START_H = 7, LIGHT_END_H = 19;
+  function applyTheme(){ const h=new Date().getHours(); document.documentElement.setAttribute('data-theme',(h>=LIGHT_START_H&&h<LIGHT_END_H)?'light':'dark'); }
+  applyTheme(); setInterval(applyTheme, 15*60*1000);
+
+  // helpers
+  function q(s){return document.querySelector(s)}
+  function fmtTime(iso, tz){
+    const d=new Date(iso), zone=tz||Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const ds=d.toLocaleString(undefined,{month:'short',day:'numeric'});
+    const ts=d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone});
+    const tzLabel=new Intl.DateTimeFormat(undefined,{timeZoneName:'short',timeZone:zone})
+      .formatToParts(d).find(p=>p.type==='timeZoneName')?.value||zone;
+    return `${ds} · ${ts} ${tzLabel}`;
+  }
+  function md(html){ marked.setOptions({gfm:true,headerIds:true,mangle:false}); return DOMPurify.sanitize(marked.parse(html||""),{ADD_ATTR:['target','rel'],FORBID_TAGS:['script','style']}); }
+
+  // get ID from ?id= or /notes/<id>
+  const params = new URLSearchParams(location.search);
+  let id = params.get('id');
+  if (!id) {
+    const m = location.pathname.match(/\/notes\/([^/?#]+)/);
+    if (m) id = decodeURIComponent(m[1]);
+  }
+  if (!id) { q('#note').innerHTML = '<p class="muted">No note id provided.</p>'; return; }
+
+  // backlink to feed focusing this note
+  q('#backlink').href = `/?note=${encodeURIComponent(id)}`;
+
+  // fetch single note (try direct endpoint, then fall back to list and find)
+  async function getNote(noteId){
+    try {
+      const r = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {headers:{Accept:'application/json'}});
+      if (r.ok) return await r.json();
+    } catch {}
+    const r = await fetch('/api/notes', {headers:{Accept:'application/json'}});
+    if (!r.ok) throw new Error('Failed to load notes');
+    const all = await r.json();
+    return all.find(n=>n.id===noteId) || null;
+  }
+
+  (async ()=>{
+    try{
+      const n = await getNote(id);
+      if (!n) { q('#note').innerHTML = '<p class="muted">Note not found.</p>'; return; }
+      q('#note').innerHTML = `
+        <div class="tweet__avatar"><img src="/assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true" style="width:48px;height:48px;border-radius:50%"></div>
+        <div class="tweet__body">
+          <header class="tweet__head">
+            <span class="name">Levi Carver</span>
+            <span class="dot" aria-hidden="true">·</span>
+            <time datetime="${n.created_at}">${fmtTime(n.created_at, n.tz)}</time>
+          </header>
+          <div class="tweet__text">${md(n.body)}</div>
+          <div class="tweet__actions">
+            <a class="permalink" href="/?note=${encodeURIComponent(n.id)}" aria-label="Permalink">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;vertical-align:-2px;">
+                <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
+                <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
+              </svg>
+              <span class="sr-only">Permalink</span>
+            </a>
+          </div>
+        </div>`;
+      // safe external links
+      q('#note').querySelectorAll('.tweet__text a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer';});
+      // set document title
+      document.title = `Note · Levi Carver`;
+      // basic OG tags swap (client-side; crawlers may ignore)
+      const og = [
+        ['property','og:title','Note · Levi Carver'],
+        ['property','og:type','article'],
+        ['property','og:url', location.href]
+      ];
+      og.forEach(([k,v,c])=>{ let m=document.querySelector(`meta[${k}="${v}"]`); if(!m){m=document.createElement('meta'); m.setAttribute(k,v); document.head.appendChild(m);} m.setAttribute('content', c); });
+    }catch{
+      q('#note').innerHTML = '<p class="muted">Could not load this note.</p>';
+    }
+  })();
+})();
+</script>
+</body>
+</html>
