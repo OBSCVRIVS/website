@@ -235,3 +235,38 @@ button{ font:inherit; cursor:pointer }
   .profile-header .hero-meta { margin-left: 1rem; padding-top: 56px; }
   .profile-header .hero-meta h1 { font-size: 1.6rem; }
 }
+
+/* === HERO ALIGNMENT: text starts at the same left edge as About/Notes === */
+.profile-header__inner{ position:relative; max-width:960px; padding:0 1rem; }
+
+/* avatar sits on the container’s left edge; does NOT push the text column */
+.avatar--overlap{
+  position:absolute;
+  left:1rem;                 /* align to container left */
+  bottom:-48px;              /* ~50% overlap */
+  width:96px; height:96px;
+  border-radius:50%;
+  object-fit:cover;
+  border:2px solid var(--accent);
+  box-shadow:0 0 0 4px var(--bg);
+}
+
+/* text column aligns with the global content column (no extra margin-left) */
+.profile-header .hero-meta{
+  margin-left:0;             /* << key: align with About/Notes */
+  padding-top:60px;          /* clear the overlapping avatar vertically */
+  text-align:left;
+}
+
+/* tidy heading + tagline rhythm */
+.profile-header .hero-meta h1{ margin:.1rem 0 .2rem; line-height:1.15; }
+.profile-header .tagline{ margin:0 0 .4rem; font-size:.95rem; color:var(--muted); }
+
+/* keep About/Feed widths consistent (already true, but reaffirm) */
+.about,.feed{ max-width:720px; margin:1.5rem auto; padding:0 1rem; }
+
+/* small screens: keep the same left alignment */
+@media (max-width:560px){
+  .avatar--overlap{ width:88px; height:88px; bottom:-44px; left:1rem; }
+  .profile-header .hero-meta{ padding-top:56px; }
+}
