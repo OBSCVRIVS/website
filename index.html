@@ -76,10 +76,7 @@
     parse(md){
       marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
       const html = marked.parse(md || "");
-      return DOMPurify.sanitize(html, {
-        ADD_ATTR:['target','rel'],
-        FORBID_TAGS:['script','style']
-      });
+      return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
     }
   };
 
@@ -96,10 +93,14 @@
     });
   }());
 
-  // ===== Notes render (from /api/notes) with Markdown =====
+  // ===== Notes render with shareable ?note=<id> permalinks =====
   (async function () {
     const pageSize = 10;
     let page = 0;
+    const PATH = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    const focusId = params.get('note'); // if present, we’ll jump to this
+
     const container = document.getElementById('notes');
     const newer = document.getElementById('newer');
     const older = document.getElementById('older');
@@ -120,7 +121,23 @@
         const r = await fetch('/api/notes', { headers: { 'Accept':'application/json' } });
         if (!r.ok) throw new Error('Failed to fetch notes');
         notes = await r.json();
+
+        // If we have ?note=<id>, switch to the page that contains it
+        if (focusId) {
+          const idx = notes.findIndex(n => n.id === focusId);
+          if (idx >= 0) page = Math.floor(idx / pageSize);
+        }
+
         render();
+
+        // After render, expand + scroll to the focused note
+        if (focusId) {
+          const el = document.getElementById(focusId);
+          if (el) {
+            el.classList.add('expanded');
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
       } catch {
         container.innerHTML = '<p class="muted">Could not load notes.</p>';
       }
@@ -144,15 +161,15 @@
               <time datetime="${n.created_at}">${fmtTime(n.created_at, n.tz)}</time>
             </header>
             <div class="tweet__text">${MD.parse(n.body)}</div>
-         <div class="tweet__actions">
-  <a class="permalink" href="/notes/${n.id}" aria-label="Permalink">
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
-      <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
-    </svg>
-    <span class="sr-only">Permalink</span>
-  </a>
-</div>
+            <div class="tweet__actions">
+              <a class="permalink" href="${PATH}?note=${encodeURIComponent(n.id)}" aria-label="Permalink">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;vertical-align:-2px;">
+                  <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
+                  <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
+                </svg>
+                <span class="sr-only">Permalink</span>
+              </a>
+            </div>
           </div>
         `;
 
