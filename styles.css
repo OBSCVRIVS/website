@@ -123,3 +123,49 @@ button{font:inherit;cursor:pointer}
 .grid-2{display:grid;gap:1rem;grid-template-columns:1fr 1fr}
 .flex-between{display:flex;justify-content:space-between;align-items:center;gap:1rem}
 .card{border:1px solid var(--field-border);padding:1rem;border-radius:4px;background:var(--field)}
+
+/* ===== FINAL OVERRIDES: hero alignment + avatar size/shape ===== */
+.hero{
+  max-width: 960px !important;
+  margin: -56px auto 1.25rem !important;
+  padding: 0 1rem !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  gap: 1rem !important;
+}
+
+/* Make the avatar fixed-size, circular, and not stretch */
+.hero > .avatar{
+  flex: 0 0 112px !important;
+  width: 112px !important;
+  height: 112px !important;
+  border-radius: 9999px !important;
+  object-fit: cover !important;
+  border: 3px solid var(--accent) !important;
+  box-shadow: 0 0 0 4px var(--bg) !important;
+}
+
+/* Text rhythm under the banner */
+.hero .hero-meta{ padding-bottom: .2rem !important; }
+.hero .hero-meta h1{
+  margin: 0 0 .25rem !important;
+  font-size: 1.75rem !important;
+  line-height: 1.15 !important;
+}
+.tagline{
+  margin: 0 0 .4rem !important;
+  color: var(--muted) !important;
+  font-size: .95rem !important;
+}
+
+/* Banner stays short and cropped */
+.banner{ height: 200px !important; overflow: hidden !important; }
+@media (min-width:1000px){ .banner{ height: 220px !important; } }
+.banner > img{ width:100% !important; height:100% !important; object-fit: cover !important; }
+
+/* Mobile stack */
+@media (max-width:560px){
+  .hero{ flex-direction: column !important; align-items: flex-start !important; margin: -48px auto 1rem !important; }
+  .hero > .avatar{ width: 96px !important; height: 96px !important; flex-basis: 96px !important; }
+  .hero .hero-meta h1{ font-size: 1.5rem !important; }
+}
