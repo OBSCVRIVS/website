@@ -1,90 +1,124 @@
-/* ================== TOKENS ================== */
+/* ============================================================
+   TOKENS
+   ============================================================ */
 :root{
-  --accent:#EE1F25; --accent-fill:#E41E24;
-  --bg:#fff; --ink:#0B0B0B; --muted:#6a6a6a;
-  --field:#F6F6F7; --field-border:#E3E3E6; --focus:var(--accent);
+  --accent:#EE1F25;
+  --accent-fill:#E41E24;
+}
+:root[data-theme="light"]{
+  --bg:#fff; --ink:#0B0B0B; --muted:#5C5C5C;
+  --field:#F7F7F7; --field-border:#D9D9D9; --focus:var(--accent);
 }
 :root[data-theme="dark"]{
-  --bg:#0D0D0E; --ink:#F2F2F2; --muted:#BDBDBD;
-  --field:#151517; --field-border:#2C2C30;
+  --bg:#0C0C0C; --ink:#F2F2F2; --muted:#BDBDBD;
+  --field:#111; --field-border:#333; --focus:var(--accent);
 }
 
-/* ================== GLOBAL ================== */
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
-img{max-width:100%;display:block}
-a{color:var(--accent);text-decoration:underline;text-underline-offset:.18em}
-a:hover{text-decoration-thickness:.12em}
-.muted{color:var(--muted)}
-:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+/* ============================================================
+   GLOBAL
+   ============================================================ */
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; line-height:1.5;}
+img{display:block;max-width:100%;height:auto;}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:.2em;}
+a:hover,a:focus{text-decoration-thickness:.14em;}
+.muted{color:var(--muted);}
+*{accent-color:var(--accent);-webkit-tap-highlight-color:transparent;}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;}
 ::selection{background:var(--accent);color:#fff}
 
-/* ================== NAV ================== */
-.site-nav{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--field-border)}
-.site-nav__inner{max-width:960px;margin:0 auto;padding:.6rem 1rem;display:flex;align-items:center;justify-content:space-between}
-.site-nav a{text-decoration:none;font-weight:600;color:var(--ink)}
-.site-nav a.nav-link{color:var(--accent)}
+/* ============================================================
+   NAV
+   ============================================================ */
+.site-nav{position:sticky;top:0;z-index:10;background:var(--bg);
+  border-bottom:1px solid var(--field-border);}
+.site-nav__inner{max-width:960px;margin:0 auto;padding:.65rem 1rem;
+  display:flex;justify-content:space-between;align-items:center;}
+.site-nav a{text-decoration:none;font-weight:600;color:var(--ink);}
+.site-nav a.nav-link{color:var(--accent);margin-left:1rem;}
 
-/* ================== BANNER ================== */
-.banner{height:160px;overflow:hidden}
-@media(min-width:1000px){.banner{height:180px}}
-.banner>img{width:100%;height:100%;object-fit:cover}
+/* ============================================================
+   BANNER
+   ============================================================ */
+.banner{position:relative;width:100%;height:180px;overflow:hidden;}
+@media (min-width:1000px){.banner{height:220px}}
+.banner > img{width:100%;height:100%;object-fit:cover}
 
-/* ================== HERO ================== */
-.hero{max-width:960px;margin:-44px auto 1rem;padding:0 1rem;display:flex;gap:.8rem;align-items:flex-end}
-.hero .avatar{width:88px;height:88px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);box-shadow:0 0 0 4px var(--bg)}
-@media(min-width:900px){.hero{margin:-50px auto 1.25rem}.hero .avatar{width:96px;height:96px}}
-.hero-meta{padding-bottom:.1rem}
-.hero-meta h1{margin:0 0 .2rem;font-size:1.45rem;line-height:1.2;font-weight:700}
-.tagline{margin:0 0 .35rem;color:var(--muted);font-size:.95rem}
-.social ul{list-style:none;margin:.1rem 0 0;padding:0;display:flex;gap:.75rem}
-@media(max-width:560px){
-  .hero{flex-direction:column;align-items:flex-start;margin:-44px auto .75rem}
-  .hero .avatar{width:80px;height:80px}
-  .hero-meta h1{font-size:1.35rem}
+/* ============================================================
+   HERO (LinkedIn-like)
+   ============================================================ */
+.hero{max-width:960px;margin:-56px auto 1.25rem;padding:0 1rem;
+  display:flex;align-items:flex-end;gap:1rem;}
+.hero .avatar{flex:0 0 104px;width:104px;height:104px;border-radius:50%;
+  object-fit:cover;border:3px solid var(--accent);box-shadow:0 0 0 4px var(--bg);}
+@media (min-width:900px){.hero .avatar{width:112px;height:112px}}
+.hero-meta{padding-bottom:.2rem;}
+.hero-meta h1{margin:0 0 .25rem;font-size:1.75rem;line-height:1.15;}
+.tagline{margin:0 0 .4rem;color:var(--muted);font-size:.95rem;}
+.social ul{list-style:none;margin:.1rem 0 0;padding:0;display:flex;gap:.75rem;}
+/* phone: stack cleanly */
+@media (max-width:560px){
+  .hero{flex-direction:column;align-items:flex-start;margin:-48px auto 1rem}
+  .hero .avatar{width:96px;height:96px}
+  .hero-meta h1{font-size:1.5rem}
 }
 
-/* ================== ABOUT ================== */
-.about{max-width:720px;margin:1.25rem auto 0;padding:0 1rem}
-.about h2{margin:.25rem 0 .5rem;font-size:1.05rem}
-.about p{margin:.75rem 0}
+/* ============================================================
+   ABOUT
+   ============================================================ */
+.about{max-width:720px;margin:1.5rem auto;padding:0 1rem;}
+.about h2{margin:.25rem 0 .5rem}
+.about p{margin-bottom:1rem}
 .clamp-3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .linklike{background:none;border:0;padding:0;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
 
-/* ================== FEED ================== */
-.feed{max-width:720px;margin:1.25rem auto 2rem;padding:0 1rem}
-.tweet{display:flex;gap:.6rem;padding:.85rem 0;border-bottom:1px solid var(--field-border);cursor:pointer}
-.tweet.expanded{background:color-mix(in srgb, var(--accent) 5%, transparent)}
-.tweet__avatar img{width:40px;height:40px;border-radius:50%}
+/* ============================================================
+   FEED / NOTES
+   ============================================================ */
+.feed{max-width:720px;margin:1.5rem auto 2rem;padding:0 1rem;}
+.tweet{display:flex;gap:.75rem;padding:1rem 0;border-bottom:1px solid var(--field-border);cursor:pointer;}
+.tweet.expanded{background:color-mix(in srgb, var(--accent) 6%, transparent);}
+.tweet__avatar img{width:48px;height:48px;border-radius:50%}
 .tweet__body{flex:1}
-.tweet__head{font-size:.9rem;margin-bottom:.2rem}
+.tweet__head{font-size:.9rem;margin-bottom:.25rem}
 .tweet__head .name{font-weight:600}
 .tweet__head time{color:var(--muted)}
-.tweet__text{margin:.25rem 0 .4rem}
+.tweet__text{margin:.25rem 0 .5rem}
 .tweet__actions{font-size:.85rem}
-.pager{margin-top:.8rem;display:flex;gap:.5rem}
-.pager button{padding:.35rem .7rem;border:1px solid var(--field-border);background:var(--field);color:var(--ink);cursor:pointer;border-radius:4px}
-.pager button:disabled{opacity:.55;cursor:default}
+.pager{margin-top:1rem;display:flex;gap:.5rem}
+.pager button{padding:.4rem .8rem;border:1px solid var(--field-border);background:var(--field);color:var(--ink);cursor:pointer}
+.pager button:disabled{opacity:.5;cursor:default}
 
-/* ================== FOOTER ================== */
-.footer{margin-top:2.5rem;padding:1rem;text-align:center;border-top:1px solid var(--field-border);color:var(--muted)}
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.footer{margin-top:3rem;padding:1rem;text-align:center;border-top:1px solid var(--field-border);color:var(--muted)}
+.footer a{color:var(--accent)}
 
-/* ================== FORMS / BUTTONS ================== */
+/* ============================================================
+   FORMS & BUTTONS (admin/shared)
+   ============================================================ */
 input,textarea,select{background:var(--field);color:var(--ink);border:1px solid var(--field-border);padding:.5rem;border-radius:4px;font:inherit}
-input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);outline:0}
-.btn{display:inline-block;padding:.45rem .9rem;border-radius:4px;border:1px solid transparent;text-align:center;font:inherit}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);outline:none}
+button{font:inherit;cursor:pointer}
+.btn{display:inline-block;padding:.5rem 1rem;border-radius:4px;border:1px solid transparent;text-align:center}
 .btn.primary{background:var(--accent-fill);color:#fff;border-color:var(--accent-fill)}
 .btn.ghost{background:transparent;color:var(--accent);border-color:var(--accent)}
+.btn.accent-ink{background:var(--accent);color:#000}
 
-/* ================== MARKDOWN IN TWEETS ================== */
-.tweet__text :where(h1,h2,h3){margin:.6em 0 .3em;font-weight:700;font-size:1.06em}
-.tweet__text p{margin:.45em 0}
-.tweet__text code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95em;padding:.12em .28em;border:1px solid var(--field-border);background:var(--field);border-radius:3px}
-.tweet__text pre{padding:.6rem;overflow:auto;border:1px solid var(--field-border);background:var(--field);border-radius:4px}
-.tweet__text ul,.tweet__text ol{margin:.45em 0 .45em 1.1em}
-.tweet__text blockquote{margin:.5em 0;padding-left:.7em;border-left:3px solid var(--accent);color:var(--muted)}
+/* ============================================================
+   MARKDOWN (feed)
+   ============================================================ */
+.tweet__text :where(h1,h2,h3){margin:.6em 0 .3em;font-weight:700;font-size:1.1em}
+.tweet__text p{margin:.5em 0}
+.tweet__text code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95em;padding:.15em .3em;border:1px solid var(--field-border);background:var(--field);border-radius:3px}
+.tweet__text pre{padding:.75rem;overflow:auto;border:1px solid var(--field-border);background:var(--field);border-radius:4px}
+.tweet__text ul,.tweet__text ol{margin:.5em 0 .5em 1.25em}
+.tweet__text blockquote{margin:.6em 0;padding-left:.75em;border-left:3px solid var(--accent);color:var(--muted)}
 
-/* ================== ADMIN SHARED ================== */
+/* ============================================================
+   ADMIN UTIL
+   ============================================================ */
 .container{max-width:960px;margin:2rem auto;padding:1rem}
 .grid-2{display:grid;gap:1rem;grid-template-columns:1fr 1fr}
 .flex-between{display:flex;justify-content:space-between;align-items:center;gap:1rem}
