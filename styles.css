@@ -3,7 +3,7 @@
    ============================================================ */
 :root {
   --accent: #EE1F25;
-  --accent-fill: #E41E24; /* darker variant for white text */
+  --accent-fill: #E41E24;
 }
 
 /* Light */
@@ -43,129 +43,112 @@ a {
   text-decoration: underline;
   text-underline-offset: .2em;
 }
-a:hover,
-a:focus {
-  text-decoration-thickness: .14em;
-}
+a:hover, a:focus { text-decoration-thickness: .14em; }
 
-img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-}
+img { max-width: 100%; height: auto; display: block; }
 
 * {
   accent-color: var(--accent);
   -webkit-tap-highlight-color: var(--accent);
 }
-
 .muted { color: var(--muted); }
 
 /* ============================================================
-   HEADER / NAV
+   HEADER / NAV + BANNER
    ============================================================ */
-/* Banner: short and cropped */
+/* Short, cropped banner */
 .banner{
   position: relative;
   width: 100%;
-  height: 200px;               /* desktop */
+  height: 200px;
   overflow: hidden;
 }
-@media (min-width: 1000px){
-  .banner{ height: 240px; }
-}
+@media (min-width: 1000px){ .banner{ height: 220px; } }
 .banner > img{
   width: 100%;
   height: 100%;
-  object-fit: cover;           /* never stretches */
-  display: block;
+  object-fit: cover;
 }
 
-/* Top nav bar */
-.site-nav {
+/* Top navigation */
+.site-nav{
   background: var(--bg);
   border-bottom: 1px solid var(--field-border);
   position: sticky;
   top: 0;
   z-index: 10;
 }
-.site-nav__inner {
+.site-nav__inner{
   max-width: 960px;
   margin: 0 auto;
-  padding: .75rem 1rem;
+  padding: .65rem 1rem; /* slightly tighter */
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.site-nav a {
+.site-nav a{
   text-decoration: none;
   font-weight: 600;
   color: var(--ink);
 }
-.site-nav a.nav-link {
-  margin-left: 1rem;
-  color: var(--accent);
-}
+.site-nav a.nav-link{ margin-left: 1rem; color: var(--accent); }
 
-/* Centered hero with fixed-size avatar overlapping banner */
+/* ============================================================
+   HERO (LinkedIn-like: avatar overlaps, left aligned)
+   ============================================================ */
 .hero{
   max-width: 960px;
-  margin: -60px auto 2rem;     /* overlap banner */
+  margin: -56px auto 1.25rem;   /* pull up to overlap banner */
   padding: 0 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: .75rem;
-  text-align: center;
+  display: grid;
+  grid-template-columns: 112px 1fr; /* avatar + meta */
+  column-gap: 1rem;
+  align-items: end;
+}
+@media (min-width: 900px){
+  .hero{ margin: -64px auto 1.5rem; grid-template-columns: 120px 1fr; }
 }
 
+/* Avatar: fixed, ring + halo */
 .hero .avatar,
 .avatar{
-  width: 128px !important;
-  height: 128px !important;
+  width: 112px;
+  height: 112px;
   border-radius: 50%;
   object-fit: cover;
-  border: 3px solid var(--accent);   /* red ring (keep) */
-  box-shadow: 0 0 0 4px var(--bg);   /* halo so it sits on banner */
-  display: block;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 0 4px var(--bg); /* clean cutout on banner edge */
 }
 
-.hero-meta{
-  max-width: 720px;
-}
-.hero-meta h1 {
-  margin: .6rem 0 .25rem;
-  font-size: 2rem;
-}
-.tagline {
-  margin: 0 0 .5rem;
-  color: var(--muted);
-}
-.social ul {
+/* Text rhythm */
+.hero-meta{ padding-bottom: .25rem; }
+.hero-meta h1{ margin: .25rem 0 .15rem; font-size: 2rem; line-height: 1.1; }
+.tagline{ margin: 0 0 .4rem; color: var(--muted); font-size: .95rem; }
+.social ul{
   list-style: none;
   margin: .25rem 0 0;
   padding: 0;
   display: flex;
   gap: .75rem;
-  justify-content: center;
 }
 
 /* ============================================================
    ABOUT
    ============================================================ */
-.about {
+.about{
   max-width: 720px;
-  margin: 2rem auto;
+  margin: 1.5rem auto;
   padding: 0 1rem;
 }
-.about p { margin-bottom: 1rem; }
-.clamp-3 {
+.about h2{ margin: .25rem 0 .5rem; }
+.about p{ margin-bottom: 1rem; }
+.clamp-3{
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.linklike {
+.linklike{
   background: none;
   border: none;
   padding: 0;
@@ -178,66 +161,60 @@ img {
 /* ============================================================
    FEED / NOTES
    ============================================================ */
-.feed {
+.feed{
   max-width: 720px;
-  margin: 2rem auto;
+  margin: 1.5rem auto 2rem;
   padding: 0 1rem;
 }
-.tweet {
+.tweet{
   display: flex;
   gap: .75rem;
   padding: 1rem 0;
   border-bottom: 1px solid var(--field-border);
   cursor: pointer;
 }
-.tweet.expanded { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.tweet__avatar img {
+.tweet.expanded{ background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.tweet__avatar img{
   width: 48px;
   height: 48px;
   border-radius: 50%;
 }
-.tweet__body { flex: 1; }
-.tweet__head {
-  font-size: .9rem;
-  margin-bottom: .25rem;
-}
-.tweet__head .name { font-weight: 600; }
-.tweet__head time { color: var(--muted); }
-.tweet__text { margin: .25rem 0 .5rem; }
-.tweet__actions { font-size: .85rem; }
-.pager {
+.tweet__body{ flex: 1; }
+.tweet__head{ font-size: .9rem; margin-bottom: .25rem; }
+.tweet__head .name{ font-weight: 600; }
+.tweet__head time{ color: var(--muted); }
+.tweet__text{ margin: .25rem 0 .5rem; }
+.tweet__actions{ font-size: .85rem; }
+.pager{
   margin-top: 1rem;
   display: flex;
   gap: .5rem;
 }
-.pager button {
+.pager button{
   padding: .4rem .8rem;
   border: 1px solid var(--field-border);
   background: var(--field);
   color: var(--ink);
   cursor: pointer;
 }
-.pager button:disabled {
-  opacity: .5;
-  cursor: default;
-}
+.pager button:disabled{ opacity: .5; cursor: default; }
 
 /* ============================================================
    FOOTER
    ============================================================ */
-.footer {
+.footer{
   margin-top: 3rem;
   padding: 1rem;
   text-align: center;
   border-top: 1px solid var(--field-border);
   color: var(--muted);
 }
-.footer a { color: var(--accent); }
+.footer a{ color: var(--accent); }
 
 /* ============================================================
    FORMS / INPUTS
    ============================================================ */
-input, textarea, select {
+input, textarea, select{
   background: var(--field);
   color: var(--ink);
   border: 1px solid var(--field-border);
@@ -245,34 +222,34 @@ input, textarea, select {
   border-radius: 4px;
   font: inherit;
 }
-input:focus, textarea:focus, select:focus {
+input:focus, textarea:focus, select:focus{
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
   outline: none;
 }
-button { font: inherit; cursor: pointer; }
+button{ font: inherit; cursor: pointer; }
 
 /* ============================================================
    BUTTONS
    ============================================================ */
-.btn {
+.btn{
   display: inline-block;
   padding: .5rem 1rem;
   border-radius: 4px;
   border: 1px solid transparent;
   text-align: center;
 }
-.btn.primary {
+.btn.primary{
   background: var(--accent-fill);
   color: #fff;
   border-color: var(--accent-fill);
 }
-.btn.ghost {
+.btn.ghost{
   background: transparent;
   color: var(--accent);
   border-color: var(--accent);
 }
-.btn.accent-ink {
+.btn.accent-ink{
   background: var(--accent);
   color: #000;
 }
@@ -280,23 +257,20 @@ button { font: inherit; cursor: pointer; }
 /* ============================================================
    FOCUS / SELECTION
    ============================================================ */
-:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-::selection { background: var(--accent); color: #fff; }
-input, textarea { caret-color: var(--accent); }
+:focus-visible{ outline: 3px solid var(--focus); outline-offset: 2px; }
+::selection{ background: var(--accent); color: #fff; }
+input, textarea{ caret-color: var(--accent); }
 
 /* ============================================================
    MARKDOWN STYLES
    ============================================================ */
-.tweet__text :where(h1,h2,h3) {
+.tweet__text :where(h1,h2,h3){
   margin: .6em 0 .3em;
   font-weight: 700;
   font-size: 1.1em;
 }
-.tweet__text p { margin: .5em 0; }
-.tweet__text code {
+.tweet__text p{ margin: .5em 0; }
+.tweet__text code{
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .95em;
   padding: .15em .3em;
@@ -304,7 +278,7 @@ input, textarea { caret-color: var(--accent); }
   background: var(--field);
   border-radius: 3px;
 }
-.tweet__text pre {
+.tweet__text pre{
   padding: .75rem;
   overflow: auto;
   border: 1px solid var(--field-border);
@@ -312,8 +286,8 @@ input, textarea { caret-color: var(--accent); }
   border-radius: 4px;
 }
 .tweet__text ul,
-.tweet__text ol { margin: .5em 0 .5em 1.25em; }
-.tweet__text blockquote {
+.tweet__text ol{ margin: .5em 0 .5em 1.25em; }
+.tweet__text blockquote{
   margin: .6em 0;
   padding-left: .75em;
   border-left: 3px solid var(--accent);
@@ -321,27 +295,9 @@ input, textarea { caret-color: var(--accent); }
 }
 
 /* ============================================================
-   ADMIN / UTILITY CLASSES (shared)
+   ADMIN / UTIL
    ============================================================ */
-.container{
-  max-width: 960px;
-  margin: 2rem auto;
-  padding: 1rem;
-}
-.grid-2{
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: 1fr 1fr;
-}
-.flex-between{
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-.card{
-  border: 1px solid var(--field-border);
-  padding: 1rem;
-  border-radius: 4px;
-  background: var(--field);
-}
+.container{ max-width: 960px; margin: 2rem auto; padding: 1rem; }
+.grid-2{ display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+.flex-between{ display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.card{ border: 1px solid var(--field-border); padding: 1rem; border-radius: 4px; background: var(--field); }
