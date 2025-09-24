@@ -169,8 +169,7 @@
             </header>
             <div class="tweet__text">${MD.parse(n.body)}</div>
             <div class="tweet__actions">
-              <a class="permalink" href="${PATH}?note=${encodeURIComponent(n.id)}" aria-label="Permalink">
-                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
                   <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
                 </svg>
