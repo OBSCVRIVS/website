@@ -24,8 +24,8 @@
     .byte-row{ display:flex; justify-content:space-between; align-items:center; margin-top:.35rem; font-size:.9rem; }
     .byte-count{ font-variant-numeric: tabular-nums; }
     .ok{ color: var(--muted); }
-    .warn{ color: #B26A00; }   /* amber */
-    .bad{ color: #B00020; }    /* red */
+    .warn{ color: #B26A00; }
+    .bad{ color: #B00020; }
     .mini-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
     .mini-actions button{ padding:.3rem .55rem; font-size:.85rem; }
   </style>
@@ -223,7 +223,7 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes API (robust create) ===== */
+/* ===== Notes API (create/list/delete) ===== */
 async function notesCreate(payload){
   const attempts = [
     { url: '/api/post', type: 'json' },
@@ -231,6 +231,7 @@ async function notesCreate(payload){
     { url: '/api/post', type: 'form' },
     { url: '/post',     type: 'form' },
   ];
+  let last = '';
   for (const a of attempts){
     try{
       let res;
@@ -252,10 +253,39 @@ async function notesCreate(payload){
         });
       }
       if (res.ok) return (await res.text()) ? await res.json().catch(()=> ({})) : {};
+      last = `HTTP ${res.status}`;
       log('create attempt failed →', a.url, a.type, res.status);
-    }catch(e){ log('create attempt error →', a.url, a.type, e?.message||e); }
+      if (res.status === 413) throw new Error('413 Payload Too Large');
+    }catch(e){
+      last = e?.message || String(e);
+      log('create attempt error →', a.url, a.type, last);
+      if (String(last).includes('413')) throw new Error('413 Payload Too Large');
+    }
   }
-  throw new Error('All create attempts failed');
+  throw new Error(last || 'Create failed');
+}
+async function notesList(){
+  try { return await api('/api/notes?all=1'); } catch {}
+  try { return await api('/notes?all=1'); } catch {}
+  return await api('/api/notes');
+}
+async function notesDelete(id){
+  const tries = [
+    { url: `/notes/${encodeURIComponent(id)}`, method:'DELETE' },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'DELETE' },
+    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
+  ];
+  let lastErr;
+  for (const t of tries){
+    try{
+      if (t.method === 'POST') {
+        return await api(t.url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
+      }
+      return await api(t.url, { method:t.method });
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Delete failed');
 }
 
 /* ===== Posts (mirror frontend) ===== */
@@ -267,7 +297,6 @@ function mdRender(src){
   const html = marked.parse(src || "");
   return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
 }
-
 function renderPosts(notes){
   if (!postsBox) return;
   if (!Array.isArray(notes) || notes.length === 0){
@@ -312,8 +341,9 @@ function renderPosts(notes){
   });
 }
 
-/* ===== Compose: live byte counter + safe/chunked submit ===== */
-const MAX_BYTES = 90000;                 // soft cap per request
+/* ===== Compose: sizes & split (robust) ===== */
+const MAX_BYTES = 90000;             // soft UI cap
+const SEND_CAP  = 60000;             // conservative per-request cap to dodge 413
 const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
 const enc = new TextEncoder();
 
@@ -327,7 +357,6 @@ function payloadBytes(body){
   const sample = { body, created_at: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
   return enc.encode(JSON.stringify(sample)).length;
 }
-
 function updateByteUI(){
   if (!bodyEl) return;
   const size = payloadBytes(bodyEl.value);
@@ -335,48 +364,64 @@ function updateByteUI(){
   byteMaxEl.textContent = String(MAX_BYTES);
   const bc = byteNowEl.parentElement;
   bc.classList.remove('ok','warn','bad');
-  if (size > MAX_BYTES) { bc.classList.add('bad'); btnPost.disabled = false; } // allow; we auto-chunk
-  else if (size > WARN_BYTES) { bc.classList.add('warn'); btnPost.disabled = false; }
-  else { bc.classList.add('ok'); btnPost.disabled = false; }
+  if (size > MAX_BYTES) bc.classList.add('bad');
+  else if (size > WARN_BYTES) bc.classList.add('warn');
+  else bc.classList.add('ok');
+  btnPost.disabled = false; // allow; we auto-chunk
 }
-
 function trimBody(){
-  bodyEl.value = bodyEl.value.replace(/[ \t]+$/gm, '').replace(/^\n+|\n+$/g, '');
+  bodyEl.value = bodyEl.value
+    .replace(/[ \t]+$/gm, '')
+    .replace(/^\n+|\n+$/g, '');
   renderPreview(); updateByteUI();
 }
 function collapseBlanks(){
   bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
   renderPreview(); updateByteUI();
 }
-
-/* Split text into parts that keep under MAX_BYTES, preferring paragraph boundaries */
 function splitByBytes(text, maxBytes){
-  const paras = text.split(/\n{2,}/); // paragraphs (keeps single newlines within para)
   const parts = [];
+  const paras = text.split(/\n{2,}/);
   let buf = '';
-  const push = () => { if (buf.trim()) { parts.push(buf.trim()); buf=''; } };
+  const push = ()=>{ if (buf.trim()) { parts.push(buf.trim()); buf=''; } };
+
   for (let i=0;i<paras.length;i++){
     const candidate = buf ? (buf + '\n\n' + paras[i]) : paras[i];
-    if (payloadBytes(candidate) <= maxBytes) {
-      buf = candidate;
-    } else if (!buf) {
-      // single paragraph too big → hard split by sentences
-      const chunks = paras[i].split(/(?<=[.!?])\s+(?=[A-Z(“"'\[])/);
+    if (payloadBytes(candidate) <= maxBytes) { buf = candidate; continue; }
+    if (!buf){
+      const sent = paras[i].split(/(?<=[.!?])\s+(?=[A-Z(“"'\[])/);
       let sb = '';
-      for (const c of chunks){
-        const cand = sb ? (sb + ' ' + c) : c;
-        if (payloadBytes(cand) <= maxBytes) sb = cand;
-        else { if (sb) parts.push(sb.trim()); sb = c; }
+      for (const s of sent){
+        const c = sb ? (sb + ' ' + s) : s;
+        if (payloadBytes(c) <= maxBytes) { sb = c; }
+        else {
+          if (sb) { parts.push(sb.trim()); sb=''; }
+          // hard-slice very long sentence
+          let chunk = s;
+          while (payloadBytes(chunk) > maxBytes){
+            let lo=1, hi=chunk.length, cut=1;
+            while (lo<=hi){
+              const mid = Math.floor((lo+hi)/2);
+              const pref = chunk.slice(0, mid);
+              if (payloadBytes(pref) <= maxBytes){ cut = mid; lo = mid+1; }
+              else { hi = mid-1; }
+            }
+            parts.push(chunk.slice(0, cut).trim());
+            chunk = chunk.slice(cut);
+          }
+          if (chunk.trim()) sb = chunk;
+        }
       }
-      if (sb) { push(); buf=''; }
+      if (sb.trim()) parts.push(sb.trim());
     } else {
-      push(); i--; // reprocess this paragraph as first of next part
+      push(); i--;
     }
   }
   push();
   return parts;
 }
 
+/* Wire preview + counter */
 document.addEventListener('DOMContentLoaded', () => {
   renderPreview(); updateByteUI();
   bodyEl?.addEventListener('input', ()=>{ renderPreview(); updateByteUI(); });
@@ -384,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCollapse?.addEventListener('click', collapseBlanks);
 });
 
-/* Save (with automatic chunking) */
+/* ===== Save (auto-chunk; 413-safe) ===== */
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   trimBody(); collapseBlanks();
@@ -393,35 +438,39 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   let parts = [full];
-  if (payloadBytes(full) > MAX_BYTES){
-    parts = splitByBytes(full, MAX_BYTES - 1000); // small safety margin
-    const ok = confirm(`This post is large, so I'll split it into ${parts.length} parts and publish them in order.\nContinue?`);
-    if (!ok) return;
+  if (payloadBytes(full) > SEND_CAP){
+    parts = splitByBytes(full, SEND_CAP);
+    if (!confirm(`This post is large. Split into ${parts.length} parts and publish in order?`)) return;
   }
 
   const btn = $('#btn-post'); const original = btn.textContent;
   btn.disabled = true;
 
-  // Base timestamp; nudge +1s per part to preserve order
   const base = new Date();
-  for (let i=0;i<parts.length;i++){
-    const pfx = (parts.length > 1) ? `(Part ${i+1}/${parts.length})\n\n` : '';
-    const payload = {
-      body: pfx + parts[i],
-      created_at: new Date(base.getTime() + i*1000).toISOString(),
-      tz
-    };
-    btn.textContent = `Posting ${i+1}/${parts.length}…`;
-    try{ await notesCreate(payload); }
-    catch(err){ log('save error:', err?.message || err); alert(`Failed on part ${i+1}. Posted ${i} part(s).`); break; }
+  let posted = 0;
+  try{
+    for (let i=0;i<parts.length;i++){
+      const pfx = (parts.length > 1) ? `(Part ${i+1}/${parts.length})\n\n` : '';
+      const payload = {
+        body: pfx + parts[i],
+        created_at: new Date(base.getTime() + i*1000).toISOString(),
+        tz
+      };
+      btn.textContent = `Posting ${i+1}/${parts.length}…`;
+      await notesCreate(payload);
+      posted++;
+    }
+    alert(`Posted ${posted} / ${parts.length} part(s).`);
+    bodyEl.value = ''; renderPreview(); updateByteUI();
+    await loadPosts();
+  }catch(err){
+    alert(`Failed on part ${posted+1}. ${posted} part(s) posted.\n${err?.message||err}`);
+  }finally{
+    btn.textContent = original; btn.disabled = false;
   }
-
-  btn.textContent = original; btn.disabled = false;
-  bodyEl.value = ''; renderPreview(); updateByteUI();
-  await loadPosts();
 });
 
-/* Load */
+/* ===== Load posts ===== */
 async function loadPosts(){
   try{
     const notes = await notesList();
