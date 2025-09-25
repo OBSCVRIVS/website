@@ -223,32 +223,43 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes API ===== */
+/* ===== Notes API (robust create) ===== */
 async function notesCreate(payload){
-  return api('/api/post', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-}
-async function notesList(){
-  try { return await api('/api/notes?all=1'); } catch {}
-  try { return await api('/notes?all=1'); } catch {}
-  return await api('/api/notes');
-}
-async function notesDelete(id){
-  const tries = [
-    { url: `/notes/${encodeURIComponent(id)}`, method:'DELETE' },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method:'DELETE' },
-    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
+  const attempts = [
+    { url: '/api/post', type: 'json' },
+    { url: '/post',     type: 'json' },
+    { url: '/api/post', type: 'form' },
+    { url: '/post',     type: 'form' },
   ];
-  let lastErr;
-  for (const t of tries){
+
+  for (const a of attempts){
     try{
-      if (t.method === 'POST') {
-        return await api(t.url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
+      let res;
+      if (a.type === 'json'){
+        res = await fetch(a.url, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }else{
+        const body = new URLSearchParams();
+        body.set('body', payload.body);
+        body.set('created_at', payload.created_at);
+        body.set('tz', payload.tz);
+        res = await fetch(a.url, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8', 'Accept':'application/json' },
+          body
+        });
       }
-      return await api(t.url, { method:t.method });
-    }catch(e){ lastErr = e; }
+      if (res.ok) return (await res.text()) ? await res.json().catch(()=> ({})) : {};
+      // If this attempt fails, try the next one
+      log('create attempt failed →', a.url, a.type, res.status);
+    }catch(e){
+      log('create attempt error →', a.url, a.type, e?.message||e);
+    }
   }
-  throw lastErr || new Error('Delete failed');
+  throw new Error('All create attempts failed');
 }
 
 /* ===== Posts (mirror frontend) ===== */
