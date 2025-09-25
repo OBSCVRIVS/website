@@ -6,6 +6,12 @@
   <title>Contact · Levi Carver</title>
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
+  <style>
+    /* small helpers so the inline message is clear even without site styles */
+    .form-msg{ margin-top:.75rem; font-size:.95rem; }
+    .form-msg.success{ color: #147a2e; }
+    .form-msg.error{ color: #a40000; }
+  </style>
 </head>
 <body>
 
@@ -22,13 +28,13 @@
     <p class="muted">Reach out and I’ll get back to you.</p>
   </header>
 
-  <!-- Web3Forms integration -->
-  <form class="contact__form" action="https://api.web3forms.com/submit" method="POST">
-    <!-- required hidden fields -->
-    <input type="hidden" name="access_key" value="3ae625a5-39bd-40f2-a608-f226e62ee021
-">
+  <!-- Keep action/hidden key for no-JS fallback -->
+  <form class="contact__form" id="contact-form" action="https://api.web3forms.com/submit" method="POST">
+    <input type="hidden" name="access_key" value="3ae625a5-39bd-40f2-a608-f226e62ee021">
     <input type="hidden" name="from_name" value="lpcarver.com">
     <input type="hidden" name="subject" value="New message from lpcarver.com">
+    <!-- (optional) spam honeypot -->
+    <input type="checkbox" name="botcheck" style="display:none!important" tabindex="-1" autocomplete="off">
 
     <div class="field">
       <label for="name">Name</label>
@@ -49,24 +55,82 @@
       <button class="btn primary" type="submit">Send</button>
       <button class="btn ghost" type="reset">Clear</button>
     </div>
+
+    <div id="form-msg" class="form-msg" role="status" aria-live="polite" hidden></div>
   </form>
 </main>
 
-<!-- Theme auto-switch, same as index -->
 <script>
+/* Theme (same as index) */
 (function () {
   const LIGHT_START_H = 7, LIGHT_END_H = 19;
-  function applyThemeByClock() {
+  function applyThemeByClock(){
     const h = new Date().getHours();
     const mode = (h >= LIGHT_START_H && h < LIGHT_END_H) ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', mode);
-    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    const html = document.documentElement;
+    html.setAttribute('data-theme', mode);
+    const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
     meta.setAttribute('content', bg);
   }
   applyThemeByClock();
   setInterval(applyThemeByClock, 15*60*1000);
+})();
+
+/* Web3Forms AJAX submit with inline Thank You (stays on page) */
+(function () {
+  const form = document.getElementById('contact-form');
+  const msg  = document.getElementById('form-msg');
+  const submitBtn = form.querySelector('button[type="submit"]');
+
+  function showMsg(text, kind){
+    msg.hidden = !text;
+    msg.textContent = text || '';
+    msg.className = 'form-msg' + (kind ? ' ' + kind : '');
+  }
+
+  form.addEventListener('submit', async (e) => {
+    // use native validation first
+    if (!form.reportValidity()) return;
+
+    e.preventDefault(); // stay on page
+
+    const original = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+    showMsg('', '');
+
+    try {
+      // collect fields
+      const fd = new FormData(form);
+      // send JSON (Web3Forms accepts both form-encoded & JSON)
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify(Object.fromEntries(fd.entries()))
+      });
+      const data = await res.json();
+
+      if (res.ok && data?.success) {
+        showMsg('Thanks! Your message was sent.', 'success');
+        form.reset();
+      } else {
+        // fall back to normal post if API says no
+        showMsg('Could not send right now. Trying backup method…', 'error');
+        form.removeEventListener('submit', arguments.callee);
+        form.submit(); // normal form action fallback
+      }
+    } catch (err) {
+      // network issue → fallback to normal post
+      showMsg('Network issue. Trying backup method…', 'error');
+      form.removeEventListener('submit', arguments.callee);
+      form.submit();
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = original;
+    }
+  });
 })();
 </script>
 </body>
