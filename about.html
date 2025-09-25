@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About · Levi Carver</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="theme-color" content="#FFFFFF">
+</head>
+<body>
+
+<nav class="site-nav site-nav--top" aria-label="Site">
+  <div class="site-nav__inner">
+    <a class="brand" href="/">Levi Carver</a>
+    <div>
+      <a class="nav-link" href="about.html" aria-current="page">About</a>
+      <a class="nav-link" href="contact.html">Contact</a>
+    </div>
+  </div>
+</nav>
+
+<main class="about" aria-labelledby="about-title">
+  <h1 id="about-title">About</h1>
+  <p>
+    I work in tech with a focus on improving digital systems and making them more accessible for everyone.
+    I value empathy, open communication, and learning from different perspectives, which guide how I approach challenges
+    both professionally and personally. I’m passionate about debate, political news, and strategy games like chess,
+    all of which push me to think critically and see issues from multiple angles. At the core of everything I do is a
+    desire to understand people’s experiences and use that understanding to help create meaningful change.
+  </p>
+</main>
+
+<script>
+(function () {
+  const LIGHT_START_H = 7, LIGHT_END_H = 19;
+  function applyThemeByClock(){
+    const h = new Date().getHours();
+    const mode = (h >= LIGHT_START_H && h < LIGHT_END_H) ? 'light' : 'dark';
+    const html = document.documentElement;
+    html.setAttribute('data-theme', mode);
+    const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+    meta.setAttribute('content', bg);
+  }
+  applyThemeByClock();
+  setInterval(applyThemeByClock, 15*60*1000);
+})();
+</script>
+</body>
+</html>
