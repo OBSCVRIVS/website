@@ -66,11 +66,17 @@
   setInterval(applyThemeByClock, 15*60*1000);
 })();
 
-/* Submit handler with validation + resilient endpoint tries */
+/* Contact submit: endpoint → share sheet → mailto */
 (function () {
   const form = document.querySelector('.contact__form');
   const msg  = document.getElementById('form-msg');
   const btn  = form.querySelector('button[type="submit"]');
+
+  // Optional configuration via attributes:
+  const CONFIG = {
+    endpoint: form.dataset.endpoint || '',      // e.g. "https://api.yoursite.com/contact"
+    mailto:   form.dataset.mailto   || ''       // e.g. "levi@yourdomain.com" (optional)
+  };
 
   function showMsg(text, kind){
     msg.hidden = !text;
@@ -78,10 +84,27 @@
     msg.className = 'form-msg' + (kind ? ' ' + kind : '');
   }
 
+  async function tryPost(url, payload){
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  }
+
+  function asPlainText(payload){
+    return [
+      `Name: ${payload.name}`,
+      `Email: ${payload.email}`,
+      `Timezone: ${payload.tz}`,
+      ``,
+      payload.message
+    ].join('\n');
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-
-    // Native browser validation UI
     if (!form.reportValidity()) return;
 
     const payload = {
@@ -96,28 +119,48 @@
     const original = btn.textContent;
     btn.textContent = 'Sending…';
 
-    const tries = [
-      { url: '/api/contact',  init: { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) } },
-      { url: '/contact',      init: { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) } },
-    ];
+    const tries = [];
+    if (CONFIG.endpoint) tries.push(CONFIG.endpoint);
+    tries.push('/api/contact', '/contact');
 
-    let ok = false, last = '';
-    for (const t of tries) {
+    let delivered = false, lastErr = '';
+
+    // Try HTTP endpoints first
+    for (const u of tries){
+      try { if (await tryPost(u, payload)) { delivered = true; break; } }
+      catch (err){ lastErr = err?.message || 'network error'; }
+    }
+
+    // Share sheet fallback
+    if (!delivered && navigator.share) {
       try {
-        const res = await fetch(t.url, t.init);
-        if (res.ok) { ok = true; break; }
-        last = `${res.status} ${res.statusText}`;
+        await navigator.share({
+          title: 'Contact from ' + payload.name,
+          text: asPlainText(payload)
+        });
+        delivered = true; // user completed a share
       } catch (err) {
-        last = err?.message || 'network error';
+        // user canceled or share failed; continue to mailto
       }
     }
 
-    if (ok) {
-      showMsg('Thanks! Your message was sent.', 'success');
+    // Mailto fallback (works even without a configured recipient)
+    if (!delivered) {
+      const subject = `Contact from ${payload.name}`;
+      const body    = asPlainText(payload);
+      const to      = CONFIG.mailto ? encodeURIComponent(CONFIG.mailto) : '';
+      const href    = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      // Opening mail client is considered a successful "handoff"
+      window.location.href = href;
+      delivered = true;
+    }
+
+    if (delivered) {
+      showMsg('Thanks! Your message was sent (or handed off).', 'success');
       form.reset();
     } else {
       showMsg('Could not send right now. Please try again later.', 'error');
-      console.warn('Contact send failed:', last);
+      console.warn('Contact send failed:', lastErr);
     }
 
     btn.disabled = false;
