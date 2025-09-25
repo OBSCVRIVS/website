@@ -22,31 +22,34 @@
     <p class="muted">Reach out and I’ll get back to you.</p>
   </header>
 
-  <form class="contact__form" action="#" method="post" novalidate>
+  <!-- keep native browser validation: no 'novalidate' -->
+  <form class="contact__form" method="post">
     <div class="field">
       <label for="name">Name</label>
-      <input id="name" name="name" type="text" autocomplete="name" placeholder="Your full name">
+      <input id="name" name="name" type="text" autocomplete="name" placeholder="Your full name" required>
     </div>
 
     <div class="field">
       <label for="email">Email</label>
-      <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" inputmode="email">
+      <input id="email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required>
     </div>
 
     <div class="field field--full">
       <label for="message">Message</label>
-      <textarea id="message" name="message" rows="6" placeholder="How can I help?"></textarea>
+      <textarea id="message" name="message" rows="6" placeholder="How can I help?" required></textarea>
     </div>
 
     <div class="actions field--full">
       <button class="btn primary" type="submit">Send</button>
       <button class="btn ghost" type="reset">Clear</button>
     </div>
+
+    <div id="form-msg" class="form-msg" role="status" aria-live="polite" hidden></div>
   </form>
 </main>
 
 <script>
-/* reuse the same theme sync you have on index if you want it here too */
+/* Theme (same as index) */
 (function () {
   const LIGHT_START_H = 7, LIGHT_END_H = 19;
   function applyThemeByClock(){
@@ -61,6 +64,65 @@
   }
   applyThemeByClock();
   setInterval(applyThemeByClock, 15*60*1000);
+})();
+
+/* Submit handler with validation + resilient endpoint tries */
+(function () {
+  const form = document.querySelector('.contact__form');
+  const msg  = document.getElementById('form-msg');
+  const btn  = form.querySelector('button[type="submit"]');
+
+  function showMsg(text, kind){
+    msg.hidden = !text;
+    msg.textContent = text || '';
+    msg.className = 'form-msg' + (kind ? ' ' + kind : '');
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // Native browser validation UI
+    if (!form.reportValidity()) return;
+
+    const payload = {
+      name: form.name.value.trim(),
+      email: form.email.value.trim(),
+      message: form.message.value.trim(),
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+    };
+
+    showMsg('', '');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Sending…';
+
+    const tries = [
+      { url: '/api/contact',  init: { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) } },
+      { url: '/contact',      init: { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) } },
+    ];
+
+    let ok = false, last = '';
+    for (const t of tries) {
+      try {
+        const res = await fetch(t.url, t.init);
+        if (res.ok) { ok = true; break; }
+        last = `${res.status} ${res.statusText}`;
+      } catch (err) {
+        last = err?.message || 'network error';
+      }
+    }
+
+    if (ok) {
+      showMsg('Thanks! Your message was sent.', 'success');
+      form.reset();
+    } else {
+      showMsg('Could not send right now. Please try again later.', 'error');
+      console.warn('Contact send failed:', last);
+    }
+
+    btn.disabled = false;
+    btn.textContent = original;
+  });
 })();
 </script>
 </body>
