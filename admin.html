@@ -341,9 +341,11 @@ function renderPosts(notes){
   });
 }
 
-/* ===== Compose: sizes & split (robust) ===== */
-const MAX_BYTES = 90000;             // soft UI cap
-const SEND_CAP  = 60000;             // conservative per-request cap to dodge 413
+// ===== Compose: sizes & split (robust) =====
+const MAX_BYTES = 90000;             // UI reference only
+const SEND_CAP_START = 18000;        // initial per-request target (~18 KB)
+const MIN_CAP = 8000;                // smallest chunk we’ll try (~8 KB)
+const SAFETY = 500;                  // margin to cover headers/metadata
 const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
 const enc = new TextEncoder();
 
@@ -429,27 +431,21 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCollapse?.addEventListener('click', collapseBlanks);
 });
 
-/* ===== Save (auto-chunk; 413-safe) ===== */
+/* ===== Save (adaptive auto-chunk; 413-safe) ===== */
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   trimBody(); collapseBlanks();
 
   const full = bodyEl.value || '';
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-  let parts = [full];
-  if (payloadBytes(full) > SEND_CAP){
-    parts = splitByBytes(full, SEND_CAP);
-    if (!confirm(`This post is large. Split into ${parts.length} parts and publish in order?`)) return;
-  }
-
   const btn = $('#btn-post'); const original = btn.textContent;
   btn.disabled = true;
 
-  const base = new Date();
-  let posted = 0;
-  try{
-    for (let i=0;i<parts.length;i++){
+  // try to post with a given cap; throws on error (incl. 413)
+  async function postWithCap(text, cap){
+    const parts = payloadBytes(text) > cap ? splitByBytes(text, cap - SAFETY) : [text];
+    const base = new Date();
+    for (let i = 0; i < parts.length; i++){
       const pfx = (parts.length > 1) ? `(Part ${i+1}/${parts.length})\n\n` : '';
       const payload = {
         body: pfx + parts[i],
@@ -457,16 +453,35 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
         tz
       };
       btn.textContent = `Posting ${i+1}/${parts.length}…`;
-      await notesCreate(payload);
-      posted++;
+      await notesCreate(payload); // will throw e.g. “413 Payload Too Large”
     }
-    alert(`Posted ${posted} / ${parts.length} part(s).`);
-    bodyEl.value = ''; renderPreview(); updateByteUI();
-    await loadPosts();
+    return parts.length;
+  }
+
+  let cap = SEND_CAP_START;
+  try{
+    // First attempt; shrink and retry automatically on 413
+    while (true){
+      try{
+        const posted = await postWithCap(full, cap);
+        alert(`Posted ${posted} part(s).`);
+        bodyEl.value = ''; renderPreview(); updateByteUI();
+        await loadPosts();
+        break;
+      }catch(err){
+        const msg = String(err?.message || err);
+        if (msg.includes('413') && cap > MIN_CAP){
+          cap = Math.max(MIN_CAP, Math.floor(cap * 0.7)); // back off and retry
+          continue;
+        }
+        throw err; // non-413 or already at min cap
+      }
+    }
   }catch(err){
-    alert(`Failed on part ${posted+1}. ${posted} part(s) posted.\n${err?.message||err}`);
+    alert(`Failed to post.\n${err?.message || err}`);
   }finally{
-    btn.textContent = original; btn.disabled = false;
+    btn.textContent = original;
+    btn.disabled = false;
   }
 });
 
