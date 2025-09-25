@@ -22,8 +22,13 @@
     <p class="muted">Reach out and I’ll get back to you.</p>
   </header>
 
-  <!-- keep native browser validation: no 'novalidate' -->
-  <form class="contact__form" method="post">
+  <!-- Web3Forms integration -->
+  <form class="contact__form" action="https://api.web3forms.com/submit" method="POST">
+    <!-- required hidden fields -->
+    <input type="hidden" name="access_key" value="YOUR-ACCESS-KEY-HERE">
+    <input type="hidden" name="from_name" value="lpcarver.com">
+    <input type="hidden" name="subject" value="New message from lpcarver.com">
+
     <div class="field">
       <label for="name">Name</label>
       <input id="name" name="name" type="text" autocomplete="name" placeholder="Your full name" required>
@@ -43,129 +48,24 @@
       <button class="btn primary" type="submit">Send</button>
       <button class="btn ghost" type="reset">Clear</button>
     </div>
-
-    <div id="form-msg" class="form-msg" role="status" aria-live="polite" hidden></div>
   </form>
 </main>
 
+<!-- Theme auto-switch, same as index -->
 <script>
-/* Theme (same as index) */
 (function () {
   const LIGHT_START_H = 7, LIGHT_END_H = 19;
-  function applyThemeByClock(){
+  function applyThemeByClock() {
     const h = new Date().getHours();
     const mode = (h >= LIGHT_START_H && h < LIGHT_END_H) ? 'light' : 'dark';
-    const html = document.documentElement;
-    html.setAttribute('data-theme', mode);
-    const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
+    document.documentElement.setAttribute('data-theme', mode);
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
     meta.setAttribute('content', bg);
   }
   applyThemeByClock();
   setInterval(applyThemeByClock, 15*60*1000);
-})();
-
-/* Contact submit: endpoint → share sheet → mailto */
-(function () {
-  const form = document.querySelector('.contact__form');
-  const msg  = document.getElementById('form-msg');
-  const btn  = form.querySelector('button[type="submit"]');
-
-  // Optional configuration via attributes:
-  const CONFIG = {
-    endpoint: form.dataset.endpoint || '',      // e.g. "https://api.yoursite.com/contact"
-    mailto:   form.dataset.mailto   || ''       // e.g. "levi@yourdomain.com" (optional)
-  };
-
-  function showMsg(text, kind){
-    msg.hidden = !text;
-    msg.textContent = text || '';
-    msg.className = 'form-msg' + (kind ? ' ' + kind : '');
-  }
-
-  async function tryPost(url, payload){
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return res.ok;
-  }
-
-  function asPlainText(payload){
-    return [
-      `Name: ${payload.name}`,
-      `Email: ${payload.email}`,
-      `Timezone: ${payload.tz}`,
-      ``,
-      payload.message
-    ].join('\n');
-  }
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!form.reportValidity()) return;
-
-    const payload = {
-      name: form.name.value.trim(),
-      email: form.email.value.trim(),
-      message: form.message.value.trim(),
-      tz: Intl.DateTimeFormat().resolvedOptions().timeZone
-    };
-
-    showMsg('', '');
-    btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = 'Sending…';
-
-    const tries = [];
-    if (CONFIG.endpoint) tries.push(CONFIG.endpoint);
-    tries.push('/api/contact', '/contact');
-
-    let delivered = false, lastErr = '';
-
-    // Try HTTP endpoints first
-    for (const u of tries){
-      try { if (await tryPost(u, payload)) { delivered = true; break; } }
-      catch (err){ lastErr = err?.message || 'network error'; }
-    }
-
-    // Share sheet fallback
-    if (!delivered && navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Contact from ' + payload.name,
-          text: asPlainText(payload)
-        });
-        delivered = true; // user completed a share
-      } catch (err) {
-        // user canceled or share failed; continue to mailto
-      }
-    }
-
-    // Mailto fallback (works even without a configured recipient)
-    if (!delivered) {
-      const subject = `Contact from ${payload.name}`;
-      const body    = asPlainText(payload);
-      const to      = CONFIG.mailto ? encodeURIComponent(CONFIG.mailto) : '';
-      const href    = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      // Opening mail client is considered a successful "handoff"
-      window.location.href = href;
-      delivered = true;
-    }
-
-    if (delivered) {
-      showMsg('Thanks! Your message was sent (or handed off).', 'success');
-      form.reset();
-    } else {
-      showMsg('Could not send right now. Please try again later.', 'error');
-      console.warn('Contact send failed:', lastErr);
-    }
-
-    btn.disabled = false;
-    btn.textContent = original;
-  });
 })();
 </script>
 </body>
