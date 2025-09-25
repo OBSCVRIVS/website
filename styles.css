@@ -449,3 +449,40 @@ input:invalid, textarea:invalid { border-color: #e5484d; }
   font-weight: 600;      /* highlight current page */
   border-bottom: 1px solid currentColor; /* subtle underline */
 }
+
+/* Single note view */
+.note-page {
+  max-width: 680px;
+  margin: 4rem auto;
+  padding: 2rem;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--field);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+.note-page .tweet {
+  margin: 0;
+  border: 0;
+}
+
+.note-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 1rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.note-close:hover,
+.note-close:focus {
+  background: var(--bg2, rgba(0,0,0,0.05));
+  color: var(--accent);
+}
