@@ -44,19 +44,17 @@
       <h1 id="hero-title">Levi Carver</h1>
       <p class="tagline">Technical Product Specialist · Los Angeles, California, USA</p>
       <nav class="social" aria-label="Social">
-  <ul>
-    <li><a href="about.html">About</a></li>
-    <li><a href="https://linkedin.com/in/levicarver" rel="me noopener" target="_blank">LinkedIn</a></li>
-    <li><a href="https://github.com/OBSCVRIVS" rel="me noopener" target="_blank">GitHub</a></li>
-  </ul>
-</nav>
+        <ul>
+          <li><a href="about.html">About</a></li>
+          <li><a href="https://linkedin.com/in/levicarver" rel="me noopener" target="_blank">LinkedIn</a></li>
+          <li><a href="https://github.com/OBSCVRIVS" rel="me noopener" target="_blank">GitHub</a></li>
+        </ul>
+      </nav>
     </div>
   </div>
 </header>
 
 <main id="main">
- 
-
   <!-- NOTES (tweet-style) -->
   <section class="feed" aria-labelledby="feed-title">
     <h2 id="feed-title">Notes</h2>
@@ -82,27 +80,10 @@
     }
   };
 
-  // ===== About expand/collapse =====
-  (function () {
-    const text = document.getElementById('about-text');
-    const btn = document.getElementById('about-toggle');
-    btn.addEventListener('click', () => {
-      const expanded = btn.getAttribute('aria-expanded') === 'true';
-      btn.setAttribute('aria-expanded', String(!expanded));
-      text.classList.toggle('clamp-3', expanded);
-      btn.textContent = expanded ? 'more…' : 'less';
-      if (!expanded) text.classList.remove('clamp-3');
-    });
-  }());
-
-  // ===== Notes render with shareable ?note=<id> permalinks =====
+  // ===== Notes render with shareable dedicated page =====
   (async function () {
     const pageSize = 10;
     let page = 0;
-    const PATH = window.location.pathname; // e.g. '/index.html' or '/'
-
-    const params = new URLSearchParams(window.location.search);
-    const focusId = params.get('note'); // if present, open/scroll to this note
 
     const container = document.getElementById('notes');
     const newer = document.getElementById('newer');
@@ -124,21 +105,7 @@
         const r = await fetch('/api/notes', { headers: { 'Accept':'application/json' } });
         if (!r.ok) throw new Error('Failed to fetch notes');
         notes = await r.json();
-
-        if (focusId) {
-          const idx = notes.findIndex(n => n.id === focusId);
-          if (idx >= 0) page = Math.floor(idx / pageSize);
-        }
-
         render();
-
-        if (focusId) {
-          const el = document.getElementById(focusId);
-          if (el) {
-            el.classList.add('expanded');
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }
       } catch {
         container.innerHTML = '<p class="muted">Could not load notes.</p>';
       }
@@ -163,7 +130,8 @@
             </header>
             <div class="tweet__text">${MD.parse(n.body)}</div>
             <div class="tweet__actions">
-            <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
                   <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
                 </svg>
@@ -172,13 +140,7 @@
             </div>
           </div>
         `;
-
-      
         container.appendChild(card);
-      });
-
-      container.querySelectorAll('.tweet__text a').forEach(a=>{
-        a.target = '_blank'; a.rel = 'noopener noreferrer';
       });
 
       newer.disabled = page === 0;
