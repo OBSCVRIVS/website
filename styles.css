@@ -424,3 +424,9 @@ input[readonly], textarea[readonly] { opacity: .75; }
 @media (max-width: 640px){
   .contact__form { grid-template-columns: 1fr; }
 }
+
+/* Contact validation + messages */
+input:invalid, textarea:invalid { border-color: #e5484d; }
+.form-msg { margin-top: .75rem; font-weight: 600; }
+.form-msg.success { color: #0a7b48; }
+.form-msg.error { color: #e5484d; }
