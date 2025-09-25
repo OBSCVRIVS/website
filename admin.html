@@ -223,53 +223,24 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes API (try JSON → FORM per endpoint, detect 413) ===== */
+/* ===== Notes API (JSON only; surface 413) ===== */
 async function notesCreate(payload){
-  // Helper: POST as JSON
-  async function postJSON(url, data){
-    const res = await fetch(url, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (res.status === 413) throw new Error('413 Payload Too Large');
-    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-    return (await res.text()) ? await res.json().catch(()=> ({})) : {};
-  }
-  // Helper: POST as form
-  async function postFORM(url, data){
-    const body = new URLSearchParams();
-    body.set('body', data.body);
-    body.set('created_at', data.created_at);
-    body.set('tz', data.tz);
-    const res = await fetch(url, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8', 'Accept':'application/json' },
-      body
-    });
-    if (res.status === 413) throw new Error('413 Payload Too Large');
-    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-    return (await res.text()) ? await res.json().catch(()=> ({})) : {};
-  }
-
   const endpoints = ['/api/post','/post'];
-
-  // For each endpoint, try JSON first; on 413, immediately try FORM.
-  // If both fail, continue to next endpoint.
   let lastErr;
   for (const ep of endpoints){
     try{
-      try { return await postJSON(ep, payload); }
-      catch (e){
-        if (String(e?.message||'').includes('413')){
-          // try FORM right away
-          return await postFORM(ep, payload);
-        }
-        throw e;
-      }
+      const res = await fetch(ep, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.status === 413) throw new Error('413 Payload Too Large');
+      if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      const txt = await res.text();
+      return txt ? await JSON.parse(txt) : {};
     }catch(e){
       lastErr = e;
-      // continue to next endpoint
+      // try next endpoint
     }
   }
   throw lastErr || new Error('All create attempts failed');
@@ -350,11 +321,12 @@ function renderPosts(notes){
     });
   });
 }
-// ===== Compose: sizes & split (robust) =====
+
+/* ===== Compose: sizes & split (robust) ===== */
 const MAX_BYTES = 90000;             // UI reference only
-const SEND_CAP_START = 6000;         // initial per-request target (~6 KB)
-const MIN_CAP = 1200;                // smallest chunk we’ll try (~1.2 KB)
-const SAFETY = 300;                  // margin for headers/metadata
+const SEND_CAP_START = 5000;         // initial target (~5 KB)
+const MIN_CAP = 400;                 // smallest chunk we’ll try (~0.4 KB)
+const SAFETY = 600;                  // margin for headers/metadata
 const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
 const enc = new TextEncoder();
 
@@ -390,31 +362,34 @@ function collapseBlanks(){
   bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
   renderPreview(); updateByteUI();
 }
+
+/* Split helper: prefers paragraph/sentence boundaries, hard-slices if needed */
 function splitByBytes(text, maxBytes){
   const parts = [];
   const paras = text.split(/\n{2,}/);
   let buf = '';
+  const fits = s => payloadBytes(s) <= maxBytes;
   const push = ()=>{ if (buf.trim()) { parts.push(buf.trim()); buf=''; } };
 
   for (let i=0;i<paras.length;i++){
     const candidate = buf ? (buf + '\n\n' + paras[i]) : paras[i];
-    if (payloadBytes(candidate) <= maxBytes) { buf = candidate; continue; }
+    if (fits(candidate)) { buf = candidate; continue; }
     if (!buf){
-      const sent = paras[i].split(/(?<=[.!?])\s+(?=[A-Z(“"'\[])/);
+      const sentences = paras[i].split(/(?<=[.!?])\s+(?=[^\s])/);
       let sb = '';
-      for (const s of sent){
+      for (const s of sentences){
         const c = sb ? (sb + ' ' + s) : s;
-        if (payloadBytes(c) <= maxBytes) { sb = c; }
+        if (fits(c)) { sb = c; }
         else {
           if (sb) { parts.push(sb.trim()); sb=''; }
-          // hard-slice very long sentence
           let chunk = s;
-          while (payloadBytes(chunk) > maxBytes){
+          while (!fits(chunk) && chunk.length > 1){
+            // binary search cut point
             let lo=1, hi=chunk.length, cut=1;
             while (lo<=hi){
               const mid = Math.floor((lo+hi)/2);
               const pref = chunk.slice(0, mid);
-              if (payloadBytes(pref) <= maxBytes){ cut = mid; lo = mid+1; }
+              if (fits(pref)) { cut = mid; lo = mid+1; }
               else { hi = mid-1; }
             }
             parts.push(chunk.slice(0, cut).trim());
@@ -450,7 +425,6 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
   const btn = $('#btn-post'); const original = btn.textContent;
   btn.disabled = true;
 
-  // try to post with a given cap; throws on error (incl. 413)
   async function postWithCap(text, cap){
     const parts = payloadBytes(text) > cap ? splitByBytes(text, cap - SAFETY) : [text];
     const base = new Date();
@@ -462,14 +436,13 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
         tz
       };
       btn.textContent = `Posting ${i+1}/${parts.length}…`;
-      await notesCreate(payload); // will throw e.g. “413 Payload Too Large”
+      await notesCreate(payload); // throws on non-OK; 413 bubbles to caller
     }
     return parts.length;
   }
 
   let cap = SEND_CAP_START;
   try{
-    // First attempt; shrink and retry automatically on 413
     while (true){
       try{
         const posted = await postWithCap(full, cap);
@@ -483,7 +456,7 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
           cap = Math.max(MIN_CAP, Math.floor(cap * 0.7)); // back off and retry
           continue;
         }
-        throw err; // non-413 or already at min cap
+        throw err; // fatal (e.g., 400/401/405/etc)
       }
     }
   }catch(err){
