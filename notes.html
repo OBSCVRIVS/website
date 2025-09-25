@@ -8,9 +8,42 @@
   <meta name="theme-color" content="#FFFFFF">
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
+
+  <!-- Page-scoped styles for the framed note + close button -->
+  <style>
+    .note-page{
+      background: var(--field);
+      border: 1px solid var(--field-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 2rem auto;
+      max-width: 720px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      position: relative;
+    }
+    .note-close{
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.25rem;
+      line-height: 1;
+      cursor: pointer;
+      position: absolute;
+      top: .75rem;
+      right: .75rem;
+      padding: .25rem;
+      border-radius: 50%;
+      transition: background .2s, color .2s;
+    }
+    .note-close:hover,.note-close:focus{
+      background: rgba(0,0,0,0.05);
+      color: var(--accent);
+      outline: none;
+    }
+  </style>
 </head>
 <body>
-  <!-- Top nav (same pattern as other pages) -->
+  <!-- Top nav -->
   <nav class="site-nav site-nav--top" aria-label="Site">
     <div class="site-nav__inner">
       <a class="brand" href="/">Levi Carver</a>
@@ -25,7 +58,7 @@
   <!-- Single note, framed -->
   <main>
     <section class="note-page">
-      <article id="note" class="tweet" aria-live="polite"></article>
+      <article id="note" class="tweet" aria-live="polite" style="cursor:auto"></article>
       <button class="note-close" id="close-btn" aria-label="Close and return to feed">✕</button>
     </section>
   </main>
@@ -79,11 +112,10 @@
     return all.find(n=>n.id===noteId)||null;
   }
 
-  // Smart close: go back if you came from same-origin; otherwise go to feed.
+  // Smart close: go back if referrer is same-origin; else go to feed
   function smartClose(){
     const sameOriginRef = document.referrer && (()=>{ try{ return new URL(document.referrer).origin===location.origin; }catch{ return false; }})();
-    if (sameOriginRef) { history.back(); }
-    else { location.href = '/'; }
+    if (sameOriginRef) { history.back(); } else { location.href = '/'; }
   }
 
   (async()=>{
