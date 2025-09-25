@@ -430,3 +430,22 @@ input:invalid, textarea:invalid { border-color: #e5484d; }
 .form-msg { margin-top: .75rem; font-weight: 600; }
 .form-msg.success { color: #0a7b48; }
 .form-msg.error { color: #e5484d; }
+
+/* === Site Nav spacing & active link === */
+.site-nav__inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.site-nav__inner .nav-link {
+  margin-left: 1.5rem;   /* consistent spacing between links */
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 400;      /* normal weight */
+}
+
+.site-nav__inner .nav-link[aria-current="page"] {
+  font-weight: 600;      /* highlight current page */
+  border-bottom: 1px solid currentColor; /* subtle underline */
+}
