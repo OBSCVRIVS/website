@@ -223,199 +223,22 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes API (JSON only; surface 413) ===== */
+<script>
+// ===== Notes API (single endpoint, 413-aware) =====
 async function notesCreate(payload){
-  const endpoints = ['/api/post','/post'];
-  let lastErr;
-  for (const ep of endpoints){
-    try{
-      const res = await fetch(ep, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.status === 413) throw new Error('413 Payload Too Large');
-      if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-      const txt = await res.text();
-      return txt ? await JSON.parse(txt) : {};
-    }catch(e){
-      lastErr = e;
-      // try next endpoint
-    }
-  }
-  throw lastErr || new Error('All create attempts failed');
-}
-async function notesList(){
-  try { return await api('/api/notes?all=1'); } catch {}
-  try { return await api('/notes?all=1'); } catch {}
-  return await api('/api/notes');
-}
-async function notesDelete(id){
-  const tries = [
-    { url: `/notes/${encodeURIComponent(id)}`, method:'DELETE' },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method:'DELETE' },
-    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
-    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
-  ];
-  let lastErr;
-  for (const t of tries){
-    try{
-      if (t.method === 'POST') {
-        return await api(t.url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
-      }
-      return await api(t.url, { method:t.method });
-    }catch(e){ lastErr = e; }
-  }
-  throw lastErr || new Error('Delete failed');
-}
-
-/* ===== Posts (mirror frontend) ===== */
-const postsBox = $('#posts-list');
-$('#btn-reload')?.addEventListener('click', loadPosts);
-
-function mdRender(src){
-  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-  const html = marked.parse(src || "");
-  return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
-}
-function renderPosts(notes){
-  if (!postsBox) return;
-  if (!Array.isArray(notes) || notes.length === 0){
-    postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
-    return;
-  }
-  postsBox.innerHTML = notes.map(n=>{
-    const when = fmtLocal(n.created_at, n.tz);
-    return `
-      <article class="tweet" id="${n.id}" style="padding:1rem;border-top:1px solid var(--field-border)">
-        <div style="display:flex;gap:1rem">
-          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
-          <div class="tweet__body" style="flex:2">
-            <header class="tweet__head">
-              <span class="name">Levi Carver</span>
-              <span class="dot" aria-hidden="true">·</span>
-              <time datetime="${n.created_at}">${when}</time>
-            </header>
-            <div class="tweet__text">${mdRender(n.body)}</div>
-          </div>
-          <div style="flex:1;display:flex;justify-content:flex-end;align-items:flex-start;gap:.5rem">
-            <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
-                <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
-              </svg>
-              <span class="sr-only">Permalink</span>
-            </a>
-            <button class="btn ghost" data-act="delete" data-id="${n.id}">Delete</button>
-          </div>
-        </div>
-      </article>`;
-  }).join('');
-  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target = '_blank'; a.rel = 'noopener noreferrer'; });
-  postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const id = b.getAttribute('data-id');
-      if (!confirm('Delete this post? This cannot be undone.')) return;
-      try { await notesDelete(id); await loadPosts(); }
-      catch(e){ log('delete error →', e?.message || e); alert('Failed to delete'); }
-    });
+  const ep = '/api/post';
+  const res = await fetch(ep, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+    body: JSON.stringify(payload)
   });
+  if (res.status === 413) throw new Error('413 Payload Too Large'); // signal to shrink
+  if (!res.ok) throw new Error(res.status + ' ' + res.statusText);  // surface real error
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : {};
 }
 
-/* ===== Compose: sizes & split (robust) ===== */
-const MAX_BYTES = 90000;             // UI reference only
-const SEND_CAP_START = 5000;         // initial target (~5 KB)
-const MIN_CAP = 400;                 // smallest chunk we’ll try (~0.4 KB)
-const SAFETY = 600;                  // margin for headers/metadata
-const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
-const enc = new TextEncoder();
-
-const byteNowEl = $('#byte-now');
-const byteMaxEl = $('#byte-max');
-const btnPost = $('#btn-post');
-const btnTrim = $('#btn-trim');
-const btnCollapse = $('#btn-collapse');
-
-function payloadBytes(body){
-  const sample = { body, created_at: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
-  return enc.encode(JSON.stringify(sample)).length;
-}
-function updateByteUI(){
-  if (!bodyEl) return;
-  const size = payloadBytes(bodyEl.value);
-  byteNowEl.textContent = String(size);
-  byteMaxEl.textContent = String(MAX_BYTES);
-  const bc = byteNowEl.parentElement;
-  bc.classList.remove('ok','warn','bad');
-  if (size > MAX_BYTES) bc.classList.add('bad');
-  else if (size > WARN_BYTES) bc.classList.add('warn');
-  else bc.classList.add('ok');
-  btnPost.disabled = false; // allow; we auto-chunk
-}
-function trimBody(){
-  bodyEl.value = bodyEl.value
-    .replace(/[ \t]+$/gm, '')
-    .replace(/^\n+|\n+$/g, '');
-  renderPreview(); updateByteUI();
-}
-function collapseBlanks(){
-  bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
-  renderPreview(); updateByteUI();
-}
-
-/* Split helper: prefers paragraph/sentence boundaries, hard-slices if needed */
-function splitByBytes(text, maxBytes){
-  const parts = [];
-  const paras = text.split(/\n{2,}/);
-  let buf = '';
-  const fits = s => payloadBytes(s) <= maxBytes;
-  const push = ()=>{ if (buf.trim()) { parts.push(buf.trim()); buf=''; } };
-
-  for (let i=0;i<paras.length;i++){
-    const candidate = buf ? (buf + '\n\n' + paras[i]) : paras[i];
-    if (fits(candidate)) { buf = candidate; continue; }
-    if (!buf){
-      const sentences = paras[i].split(/(?<=[.!?])\s+(?=[^\s])/);
-      let sb = '';
-      for (const s of sentences){
-        const c = sb ? (sb + ' ' + s) : s;
-        if (fits(c)) { sb = c; }
-        else {
-          if (sb) { parts.push(sb.trim()); sb=''; }
-          let chunk = s;
-          while (!fits(chunk) && chunk.length > 1){
-            // binary search cut point
-            let lo=1, hi=chunk.length, cut=1;
-            while (lo<=hi){
-              const mid = Math.floor((lo+hi)/2);
-              const pref = chunk.slice(0, mid);
-              if (fits(pref)) { cut = mid; lo = mid+1; }
-              else { hi = mid-1; }
-            }
-            parts.push(chunk.slice(0, cut).trim());
-            chunk = chunk.slice(cut);
-          }
-          if (chunk.trim()) sb = chunk;
-        }
-      }
-      if (sb.trim()) parts.push(sb.trim());
-    } else {
-      push(); i--;
-    }
-  }
-  push();
-  return parts;
-}
-
-/* Wire preview + counter */
-document.addEventListener('DOMContentLoaded', () => {
-  renderPreview(); updateByteUI();
-  bodyEl?.addEventListener('input', ()=>{ renderPreview(); updateByteUI(); });
-  btnTrim?.addEventListener('click', trimBody);
-  btnCollapse?.addEventListener('click', collapseBlanks);
-});
-
-/* ===== Save (adaptive auto-chunk; 413-safe) ===== */
+// ===== Save (adaptive auto-chunk; 413-safe, no /post fallback) =====
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   trimBody(); collapseBlanks();
@@ -425,6 +248,7 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
   const btn = $('#btn-post'); const original = btn.textContent;
   btn.disabled = true;
 
+  const SLEEP = ms => new Promise(r=>setTimeout(r, ms));
   async function postWithCap(text, cap){
     const parts = payloadBytes(text) > cap ? splitByBytes(text, cap - SAFETY) : [text];
     const base = new Date();
@@ -436,12 +260,13 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
         tz
       };
       btn.textContent = `Posting ${i+1}/${parts.length}…`;
-      await notesCreate(payload); // throws on non-OK; 413 bubbles to caller
+      await notesCreate(payload);         // throws 413 to caller if too big
+      await SLEEP(250);                   // small back-off between parts
     }
     return parts.length;
   }
 
-  let cap = SEND_CAP_START;
+  let cap = SEND_CAP_START;               // e.g. 5000 in your file
   try{
     while (true){
       try{
@@ -453,10 +278,10 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
       }catch(err){
         const msg = String(err?.message || err);
         if (msg.includes('413') && cap > MIN_CAP){
-          cap = Math.max(MIN_CAP, Math.floor(cap * 0.7)); // back off and retry
+          cap = Math.max(MIN_CAP, Math.floor(cap * 0.7)); // shrink and retry same endpoint
           continue;
         }
-        throw err; // fatal (e.g., 400/401/405/etc)
+        throw err; // any non-413 (e.g. 405/401/etc) stops the loop
       }
     }
   }catch(err){
@@ -465,73 +290,6 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
     btn.textContent = original;
     btn.disabled = false;
   }
-});
-
-/* ===== Load posts ===== */
-async function loadPosts(){
-  try{
-    const notes = await notesList();
-    window.__NOTES = Array.isArray(notes) ? notes : [];
-    renderPosts(window.__NOTES);
-  }catch(e){
-    log('load posts error →', e?.message || e);
-    postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>';
-  }
-}
-
-/* ===== Passkey flows ===== */
-async function passkeyRegister(){
-  try{
-    const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
-    const { data } = await waOptions('register');
-    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
-    pk.challenge = b64urlToBuf(pk.challenge);
-    if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
-    if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-    const cred = await navigator.credentials.create({ publicKey: pk });
-    const { data: out } = await waVerify('register', {
-      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
-      response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
-    });
-    if (!out?.ok) throw new Error('Registration verify failed');
-    alert('Registered.');
-    saveUser(username);
-  }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
-}
-async function passkeyLogin(){
-  try{
-    const username = UI.username.value.trim();
-    const { data } = await waOptions('login');
-    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
-    pk.challenge = b64urlToBuf(pk.challenge);
-    if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
-    const cred = await navigator.credentials.get({ publicKey: pk });
-    const { data: out } = await waVerify('login', {
-      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
-      response: { authenticatorData: bufToB64url(cred.response.authenticatorData), clientDataJSON: bufToB64url(cred.response.clientDataJSON), signature: bufToB64url(cred.response.signature), userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null }
-    });
-    if (!out?.ok) throw new Error('Login verify failed');
-    setSession('ok'); UI.authUser.textContent = username ? `User: ${username}` : '';
-    await loadPosts();
-  }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
-}
-
-/* ===== Wire + init ===== */
-UI.btnRegister?.addEventListener('click', passkeyRegister);
-UI.btnLogin?.addEventListener('click', passkeyLogin);
-UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
-renderSavedUsers(); refreshAuthUI();
-
-$('#dbg-ping')?.addEventListener('click', async ()=>{
-  const tries = ['/health','/api/health'];
-  for (const t of tries) { try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); } }
-});
-$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), origin: ORIGIN }));
-$('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
-
-document.addEventListener('DOMContentLoaded', async ()=>{
-  refreshAuthUI(); renderSavedUsers(); await loadPosts();
-  localStorage.removeItem('API_BASE');
 });
 </script>
 </body>
