@@ -223,46 +223,56 @@ async function waVerify(flow, payload){
   throw new Error('No verify endpoint');
 }
 
-/* ===== Notes API (create/list/delete) ===== */
+/* ===== Notes API (try JSON → FORM per endpoint, detect 413) ===== */
 async function notesCreate(payload){
-  const attempts = [
-    { url: '/api/post', type: 'json' },
-    { url: '/post',     type: 'json' },
-    { url: '/api/post', type: 'form' },
-    { url: '/post',     type: 'form' },
-  ];
-  let last = '';
-  for (const a of attempts){
+  // Helper: POST as JSON
+  async function postJSON(url, data){
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (res.status === 413) throw new Error('413 Payload Too Large');
+    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    return (await res.text()) ? await res.json().catch(()=> ({})) : {};
+  }
+  // Helper: POST as form
+  async function postFORM(url, data){
+    const body = new URLSearchParams();
+    body.set('body', data.body);
+    body.set('created_at', data.created_at);
+    body.set('tz', data.tz);
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8', 'Accept':'application/json' },
+      body
+    });
+    if (res.status === 413) throw new Error('413 Payload Too Large');
+    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    return (await res.text()) ? await res.json().catch(()=> ({})) : {};
+  }
+
+  const endpoints = ['/api/post','/post'];
+
+  // For each endpoint, try JSON first; on 413, immediately try FORM.
+  // If both fail, continue to next endpoint.
+  let lastErr;
+  for (const ep of endpoints){
     try{
-      let res;
-      if (a.type === 'json'){
-        res = await fetch(a.url, {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }else{
-        const body = new URLSearchParams();
-        body.set('body', payload.body);
-        body.set('created_at', payload.created_at);
-        body.set('tz', payload.tz);
-        res = await fetch(a.url, {
-          method:'POST',
-          headers:{ 'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8', 'Accept':'application/json' },
-          body
-        });
+      try { return await postJSON(ep, payload); }
+      catch (e){
+        if (String(e?.message||'').includes('413')){
+          // try FORM right away
+          return await postFORM(ep, payload);
+        }
+        throw e;
       }
-      if (res.ok) return (await res.text()) ? await res.json().catch(()=> ({})) : {};
-      last = `HTTP ${res.status}`;
-      log('create attempt failed →', a.url, a.type, res.status);
-      if (res.status === 413) throw new Error('413 Payload Too Large');
     }catch(e){
-      last = e?.message || String(e);
-      log('create attempt error →', a.url, a.type, last);
-      if (String(last).includes('413')) throw new Error('413 Payload Too Large');
+      lastErr = e;
+      // continue to next endpoint
     }
   }
-  throw new Error(last || 'Create failed');
+  throw lastErr || new Error('All create attempts failed');
 }
 async function notesList(){
   try { return await api('/api/notes?all=1'); } catch {}
@@ -340,12 +350,11 @@ function renderPosts(notes){
     });
   });
 }
-
 // ===== Compose: sizes & split (robust) =====
 const MAX_BYTES = 90000;             // UI reference only
-const SEND_CAP_START = 18000;        // initial per-request target (~18 KB)
-const MIN_CAP = 8000;                // smallest chunk we’ll try (~8 KB)
-const SAFETY = 500;                  // margin to cover headers/metadata
+const SEND_CAP_START = 6000;         // initial per-request target (~6 KB)
+const MIN_CAP = 1200;                // smallest chunk we’ll try (~1.2 KB)
+const SAFETY = 300;                  // margin for headers/metadata
 const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
 const enc = new TextEncoder();
 
