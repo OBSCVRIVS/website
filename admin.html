@@ -231,7 +231,6 @@ async function notesCreate(payload){
     { url: '/api/post', type: 'form' },
     { url: '/post',     type: 'form' },
   ];
-
   for (const a of attempts){
     try{
       let res;
@@ -253,11 +252,8 @@ async function notesCreate(payload){
         });
       }
       if (res.ok) return (await res.text()) ? await res.json().catch(()=> ({})) : {};
-      // If this attempt fails, try the next one
       log('create attempt failed →', a.url, a.type, res.status);
-    }catch(e){
-      log('create attempt error →', a.url, a.type, e?.message||e);
-    }
+    }catch(e){ log('create attempt error →', a.url, a.type, e?.message||e); }
   }
   throw new Error('All create attempts failed');
 }
@@ -278,7 +274,6 @@ function renderPosts(notes){
     postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
     return;
   }
-
   postsBox.innerHTML = notes.map(n=>{
     const when = fmtLocal(n.created_at, n.tz);
     return `
@@ -294,7 +289,6 @@ function renderPosts(notes){
             <div class="tweet__text">${mdRender(n.body)}</div>
           </div>
           <div style="flex:1;display:flex;justify-content:flex-end;align-items:flex-start;gap:.5rem">
-            <!-- open dedicated page -->
             <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">
               <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
@@ -307,9 +301,7 @@ function renderPosts(notes){
         </div>
       </article>`;
   }).join('');
-
   postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target = '_blank'; a.rel = 'noopener noreferrer'; });
-
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.getAttribute('data-id');
@@ -320,8 +312,8 @@ function renderPosts(notes){
   });
 }
 
-/* ===== Compose: live byte counter + safe submit ===== */
-const MAX_BYTES = 90000;           // hard stop (keep comfortably under host limit)
+/* ===== Compose: live byte counter + safe/chunked submit ===== */
+const MAX_BYTES = 90000;                 // soft cap per request
 const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
 const enc = new TextEncoder();
 
@@ -332,12 +324,7 @@ const btnTrim = $('#btn-trim');
 const btnCollapse = $('#btn-collapse');
 
 function payloadBytes(body){
-  // mirror the actual POST payload to measure real UTF-8 size
-  const sample = {
-    body: body,
-    created_at: new Date().toISOString(),
-    tz: Intl.DateTimeFormat().resolvedOptions().timeZone
-  };
+  const sample = { body, created_at: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
   return enc.encode(JSON.stringify(sample)).length;
 }
 
@@ -346,55 +333,92 @@ function updateByteUI(){
   const size = payloadBytes(bodyEl.value);
   byteNowEl.textContent = String(size);
   byteMaxEl.textContent = String(MAX_BYTES);
-  const bc = byteNowEl.parentElement; // .byte-count
+  const bc = byteNowEl.parentElement;
   bc.classList.remove('ok','warn','bad');
-  if (size > MAX_BYTES) { bc.classList.add('bad'); btnPost.disabled = true; }
+  if (size > MAX_BYTES) { bc.classList.add('bad'); btnPost.disabled = false; } // allow; we auto-chunk
   else if (size > WARN_BYTES) { bc.classList.add('warn'); btnPost.disabled = false; }
   else { bc.classList.add('ok'); btnPost.disabled = false; }
 }
 
 function trimBody(){
-  bodyEl.value = bodyEl.value
-    .replace(/[ \t]+$/gm, '')  // strip trailing spaces per line
-    .replace(/^\n+|\n+$/g, ''); // trim leading/trailing blank lines
+  bodyEl.value = bodyEl.value.replace(/[ \t]+$/gm, '').replace(/^\n+|\n+$/g, '');
   renderPreview(); updateByteUI();
 }
 function collapseBlanks(){
-  // collapse 3+ blank lines to max 2 to preserve paragraph rhythm
   bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
   renderPreview(); updateByteUI();
 }
 
+/* Split text into parts that keep under MAX_BYTES, preferring paragraph boundaries */
+function splitByBytes(text, maxBytes){
+  const paras = text.split(/\n{2,}/); // paragraphs (keeps single newlines within para)
+  const parts = [];
+  let buf = '';
+  const push = () => { if (buf.trim()) { parts.push(buf.trim()); buf=''; } };
+  for (let i=0;i<paras.length;i++){
+    const candidate = buf ? (buf + '\n\n' + paras[i]) : paras[i];
+    if (payloadBytes(candidate) <= maxBytes) {
+      buf = candidate;
+    } else if (!buf) {
+      // single paragraph too big → hard split by sentences
+      const chunks = paras[i].split(/(?<=[.!?])\s+(?=[A-Z(“"'\[])/);
+      let sb = '';
+      for (const c of chunks){
+        const cand = sb ? (sb + ' ' + c) : c;
+        if (payloadBytes(cand) <= maxBytes) sb = cand;
+        else { if (sb) parts.push(sb.trim()); sb = c; }
+      }
+      if (sb) { push(); buf=''; }
+    } else {
+      push(); i--; // reprocess this paragraph as first of next part
+    }
+  }
+  push();
+  return parts;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  renderPreview();
-  updateByteUI();
+  renderPreview(); updateByteUI();
   bodyEl?.addEventListener('input', ()=>{ renderPreview(); updateByteUI(); });
   btnTrim?.addEventListener('click', trimBody);
   btnCollapse?.addEventListener('click', collapseBlanks);
 });
 
-/* Save */
+/* Save (with automatic chunking) */
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
-
-  // final tidy before measuring
   trimBody(); collapseBlanks();
 
-  const size = payloadBytes(bodyEl.value);
-  if (size > MAX_BYTES){
-    alert(`This post is too large to send right now (${size} bytes > ${MAX_BYTES}).\nTry trimming or splitting it into multiple posts.`);
-    return;
+  const full = bodyEl.value || '';
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  let parts = [full];
+  if (payloadBytes(full) > MAX_BYTES){
+    parts = splitByBytes(full, MAX_BYTES - 1000); // small safety margin
+    const ok = confirm(`This post is large, so I'll split it into ${parts.length} parts and publish them in order.\nContinue?`);
+    if (!ok) return;
   }
 
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const payload = { body: (bodyEl?.value || ''), created_at: new Date().toISOString(), tz };
+  const btn = $('#btn-post'); const original = btn.textContent;
+  btn.disabled = true;
 
-  try{
-    await notesCreate(payload);
-    alert('POSTED.');
-    bodyEl.value = ''; renderPreview(); updateByteUI();
-    await loadPosts();
-  }catch(err){ log('save error:', err?.message || err); alert('Post failed'); }
+  // Base timestamp; nudge +1s per part to preserve order
+  const base = new Date();
+  for (let i=0;i<parts.length;i++){
+    const pfx = (parts.length > 1) ? `(Part ${i+1}/${parts.length})\n\n` : '';
+    const payload = {
+      body: pfx + parts[i],
+      created_at: new Date(base.getTime() + i*1000).toISOString(),
+      tz
+    };
+    btn.textContent = `Posting ${i+1}/${parts.length}…`;
+    try{ await notesCreate(payload); }
+    catch(err){ log('save error:', err?.message || err); alert(`Failed on part ${i+1}. Posted ${i} part(s).`); break; }
+  }
+
+  btn.textContent = original; btn.disabled = false;
+  bodyEl.value = ''; renderPreview(); updateByteUI();
+  await loadPosts();
 });
 
 /* Load */
