@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
-  <!-- Minimal, page-scoped styles for layout + icon -->
+  <!-- Minimal, page-scoped styles for layout + icon + counter -->
   <style>
     .admin-wrap { max-width: 960px; margin: 2rem auto; padding: 1rem; }
     .admin-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
@@ -19,6 +19,15 @@
     .permalink:hover,.permalink:focus{ color:var(--accent); text-decoration:none; }
     .permalink svg{ width:16px; height:16px; display:block; }
     .sr-only{ position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    /* Byte counter */
+    .byte-row{ display:flex; justify-content:space-between; align-items:center; margin-top:.35rem; font-size:.9rem; }
+    .byte-count{ font-variant-numeric: tabular-nums; }
+    .ok{ color: var(--muted); }
+    .warn{ color: #B26A00; }   /* amber */
+    .bad{ color: #B00020; }    /* red */
+    .mini-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
+    .mini-actions button{ padding:.3rem .55rem; font-size:.85rem; }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
@@ -61,16 +70,29 @@
       <label>
         <span>Markdown</span>
         <textarea id="body" rows="18" placeholder="Write Markdown…"></textarea>
+
+        <!-- live byte counter + quick tools -->
+        <div class="byte-row">
+          <div class="mini-actions">
+            <button type="button" id="btn-trim" class="btn ghost">Trim</button>
+            <button type="button" id="btn-collapse" class="btn ghost">Collapse blanks</button>
+          </div>
+          <div class="byte-count ok">
+            <span id="byte-now">0</span>/<span id="byte-max">90000</span> bytes
+          </div>
+        </div>
       </label>
+
       <section>
         <header class="muted">Preview</header>
         <article id="preview" class="tweet__text admin-card" style="min-height:18rem"></article>
       </section>
+
       <div class="muted" style="grid-column:1/-1">
         Timestamp set on save (UTC ISO + your IANA time zone). 24-hour time shown on site.
       </div>
       <div>
-        <button type="submit" class="btn primary">Post</button>
+        <button type="submit" id="btn-post" class="btn primary">Post</button>
       </div>
     </form>
   </section>
@@ -150,7 +172,6 @@ function renderPreview(){
   previewEl.innerHTML = DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
   previewEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
 }
-document.addEventListener('DOMContentLoaded', () => { bodyEl?.addEventListener('input', renderPreview); renderPreview(); });
 
 /* ===== Session + auth UI ===== */
 const UI = {
@@ -276,9 +297,7 @@ function renderPosts(notes){
       </article>`;
   }).join('');
 
-  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{
-    a.target = '_blank'; a.rel = 'noopener noreferrer';
-  });
+  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target = '_blank'; a.rel = 'noopener noreferrer'; });
 
   postsBox.querySelectorAll('button[data-act="delete"]').forEach(b=>{
     b.addEventListener('click', async ()=>{
@@ -290,15 +309,79 @@ function renderPosts(notes){
   });
 }
 
+/* ===== Compose: live byte counter + safe submit ===== */
+const MAX_BYTES = 90000;           // hard stop (keep comfortably under host limit)
+const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
+const enc = new TextEncoder();
+
+const byteNowEl = $('#byte-now');
+const byteMaxEl = $('#byte-max');
+const btnPost = $('#btn-post');
+const btnTrim = $('#btn-trim');
+const btnCollapse = $('#btn-collapse');
+
+function payloadBytes(body){
+  // mirror the actual POST payload to measure real UTF-8 size
+  const sample = {
+    body: body,
+    created_at: new Date().toISOString(),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+  };
+  return enc.encode(JSON.stringify(sample)).length;
+}
+
+function updateByteUI(){
+  if (!bodyEl) return;
+  const size = payloadBytes(bodyEl.value);
+  byteNowEl.textContent = String(size);
+  byteMaxEl.textContent = String(MAX_BYTES);
+  const bc = byteNowEl.parentElement; // .byte-count
+  bc.classList.remove('ok','warn','bad');
+  if (size > MAX_BYTES) { bc.classList.add('bad'); btnPost.disabled = true; }
+  else if (size > WARN_BYTES) { bc.classList.add('warn'); btnPost.disabled = false; }
+  else { bc.classList.add('ok'); btnPost.disabled = false; }
+}
+
+function trimBody(){
+  bodyEl.value = bodyEl.value
+    .replace(/[ \t]+$/gm, '')  // strip trailing spaces per line
+    .replace(/^\n+|\n+$/g, ''); // trim leading/trailing blank lines
+  renderPreview(); updateByteUI();
+}
+function collapseBlanks(){
+  // collapse 3+ blank lines to max 2 to preserve paragraph rhythm
+  bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
+  renderPreview(); updateByteUI();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderPreview();
+  updateByteUI();
+  bodyEl?.addEventListener('input', ()=>{ renderPreview(); updateByteUI(); });
+  btnTrim?.addEventListener('click', trimBody);
+  btnCollapse?.addEventListener('click', collapseBlanks);
+});
+
 /* Save */
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
+
+  // final tidy before measuring
+  trimBody(); collapseBlanks();
+
+  const size = payloadBytes(bodyEl.value);
+  if (size > MAX_BYTES){
+    alert(`This post is too large to send right now (${size} bytes > ${MAX_BYTES}).\nTry trimming or splitting it into multiple posts.`);
+    return;
+  }
+
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const payload = { body: ($('#body')?.value || ''), created_at: new Date().toISOString(), tz };
+  const payload = { body: (bodyEl?.value || ''), created_at: new Date().toISOString(), tz };
+
   try{
     await notesCreate(payload);
     alert('POSTED.');
-    $('#body').value = ''; renderPreview();
+    bodyEl.value = ''; renderPreview(); updateByteUI();
     await loadPosts();
   }catch(err){ log('save error:', err?.message || err); alert('Post failed'); }
 });
