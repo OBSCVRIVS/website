@@ -231,7 +231,7 @@ async function notesCreate(payload){
     headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
     body: JSON.stringify(payload)
   });
-  if (res.status === 413) throw new Error('413 Payload Too Large'); // caller will shrink
+  if (res.status === 413) throw new Error('413 Payload Too Large'); // caller shrinks
   if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
   const txt = await res.text();
   return txt ? JSON.parse(txt) : {};
@@ -440,18 +440,18 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
     const maxPayload = Math.max(MIN_CAP, cap - SAFETY);
     const parts = payloadBytes(text) > maxPayload ? splitByBytes(text, maxPayload) : [text];
 
-    // one group id for this post
+    // single group id for this post (used by index/notes pages to stitch)
     const gid = (crypto?.randomUUID?.() || (Date.now().toString(36)+Math.random().toString(36).slice(2)));
 
     const base = new Date();
     for (let i=0;i<parts.length;i++){
-      // final guard: enforce byte cap per part
+      // enforce byte cap per part
       let body = parts[i];
       if (payloadBytes(body) > maxPayload){
         body = sliceBodyToBytes(body, maxPayload);
       }
 
-      // Hidden stitch marker (parsed on the public pages)
+      // Hidden stitch marker parsed by the public pages
       const meta = `[CHUNK gid=${gid} idx=${i+1} total=${parts.length}]`;
 
       const payload = {
