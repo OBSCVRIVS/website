@@ -112,7 +112,37 @@
     return all.find(n=>n.id===noteId)||null;
   }
 
-  // Smart close: go back if referrer is same-origin; else go to feed
+  async function fetchAllNotes(){
+    const r=await fetch('/api/notes',{headers:{Accept:'application/json'}});
+    if(!r.ok) return [];
+    return await r.json();
+  }
+
+  function stitchChunks(rawNotes, targetId){
+    // find if targetId belongs to a chunk group
+    const target = rawNotes.find(n=>n.id===targetId);
+    if(!target) return null;
+
+    const m = target.body.match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]/);
+    if(!m) return target;
+
+    const gid = m[1], total = parseInt(m[3],10);
+    const group = rawNotes.filter(n=>n.body.startsWith(`[CHUNK gid=${gid}`));
+    if(group.length < total) return target; // incomplete
+
+    // order by idx
+    const parts = [];
+    group.forEach(n=>{
+      const mm = n.body.match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]\n?/);
+      if(mm){
+        const idx = parseInt(mm[2],10);
+        parts[idx-1] = n.body.replace(mm[0],'');
+      }
+    });
+    return { ...target, body: parts.join("\n\n") };
+  }
+
+  // Smart close
   function smartClose(){
     const sameOriginRef = document.referrer && (()=>{ try{ return new URL(document.referrer).origin===location.origin; }catch{ return false; }})();
     if (sameOriginRef) { history.back(); } else { location.href = '/'; }
@@ -121,19 +151,20 @@
   (async()=>{
     if(!id){ noteBox.innerHTML='<p class="muted">No note id provided.</p>'; return; }
     try{
-      const n = await fetchNote(id);
-      if(!n){ noteBox.innerHTML='<p class="muted">Note not found.</p>'; return; }
+      const all = await fetchAllNotes();
+      const stitched = stitchChunks(all,id);
+      if(!stitched){ noteBox.innerHTML='<p class="muted">Note not found.</p>'; return; }
       noteBox.innerHTML=`
         <div class="tweet__avatar"><img src="/assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true" style="width:48px;height:48px;border-radius:50%"></div>
         <div class="tweet__body">
           <header class="tweet__head">
             <span class="name">Levi Carver</span>
             <span class="dot" aria-hidden="true">·</span>
-            <time datetime="${n.created_at}">${fmtTime(n.created_at,n.tz)}</time>
+            <time datetime="${stitched.created_at}">${fmtTime(stitched.created_at,stitched.tz)}</time>
           </header>
-          <div class="tweet__text">${md(n.body)}</div>
+          <div class="tweet__text">${md(stitched.body)}</div>
           <div class="tweet__actions">
-            <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">
+            <a class="permalink" href="/notes.html?id=${encodeURIComponent(stitched.id)}" aria-label="Permalink">
               <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;vertical-align:-2px;">
                 <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
                 <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
