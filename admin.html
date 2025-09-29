@@ -145,23 +145,29 @@ const $ = s => document.querySelector(s);
 const dbg = $('#debug');
 function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
 
-/* ===== API, auth, preview, compose (unchanged from your last file)… ===== */
-/* ... keep your existing code for api, passkeys, notesCreate, notesList, notesDelete, etc. ... */
-
-/* ---------- Safe fallback for fmtLocal if your earlier block isn't present ---------- */
-if (typeof fmtLocal !== 'function') {
-  function fmtLocal(iso, tz){
-    const d = new Date(iso);
-    const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const ds = d.toLocaleString(undefined, { year:'numeric', month:'short', day:'2-digit', timeZone: zone });
-    const ts = d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: zone });
-    const tzLabel = new Intl.DateTimeFormat(undefined, { timeZoneName:'short', timeZone: zone })
-      .formatToParts(d).find(p=>p.type==='timeZoneName')?.value || zone;
-    return `${ds} ${ts} ${tzLabel}`;
-  }
+/* ===== API (origin-based) ===== */
+const ORIGIN = window.location.origin;
+async function api(path, opts={}){
+  const url = `${ORIGIN}/${String(path).replace(/^\//,'')}`;
+  const res = await fetch(url, opts);
+  const raw = await res.text();
+  let data; try { data = JSON.parse(raw); } catch { data = { raw }; }
+  if (!res.ok){ const msg = `${res.status} ${res.statusText} @ ${url}`; log('API error →', msg); throw new Error(msg); }
+  return data;
 }
 
-/* ---------- Composer preview renderer (matches public view) ---------- */
+/* ===== Time ===== */
+function fmtLocal(iso, tz){
+  const d = new Date(iso);
+  const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const ds = d.toLocaleString(undefined, { year:'numeric', month:'short', day:'2-digit', timeZone: zone });
+  const ts = d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: zone });
+  const tzLabel = new Intl.DateTimeFormat(undefined, { timeZoneName:'short', timeZone: zone })
+    .formatToParts(d).find(p=>p.type==='timeZoneName')?.value || zone;
+  return `${ds} ${ts} ${tzLabel}`;
+}
+
+/* ===== Markdown preview (composer) ===== */
 const bodyEl = $('#body');
 function renderPreview(){
   if (!bodyEl) return;
@@ -180,91 +186,105 @@ function renderPreview(){
   timeEl.textContent = fmtLocal(iso);
 }
 
-/* ===== Posts (stitch chunked posts) ===== */
-const postsBox = $('#posts-list');
-$('#btn-reload')?.addEventListener('click', loadPosts);
-
-function mdRender(src){
-  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-  return DOMPurify.sanitize(marked.parse(src||""), { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
+/* ===== Session + auth UI ===== */
+const UI = {
+  composer: $('#composer'), posts: $('#posts'),
+  authState: $('#auth-state'), authUser: $('#auth-user'),
+  btnRegister: $('#btn-register'), btnLogin: $('#btn-login'), btnLogout: $('#btn-logout'),
+  username: $('#username'), remembered: $('#remembered')
+};
+const SESSION_KEY = 'admin_token'; const USERS_KEY = 'admin_usernames';
+function getSession(){ return localStorage.getItem(SESSION_KEY) || null; }
+function setSession(token){ if (token) localStorage.setItem(SESSION_KEY, token); else localStorage.removeItem(SESSION_KEY); refreshAuthUI(); }
+function getSavedUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; } }
+function saveUser(u){ if (!u) return; const set = new Set(getSavedUsers().concat([u])); localStorage.setItem(USERS_KEY, JSON.stringify([...set])); renderSavedUsers(); }
+function renderSavedUsers(){ const list = getSavedUsers(); if (!UI.remembered) return;
+  if (!list.length){ UI.remembered.innerHTML = ''; return; }
+  UI.remembered.innerHTML = '<div class="muted">Quick login:</div>' + list.map(u => `<button class="btn ghost" data-u="${u}">${u}</button>`).join(' ');
+  UI.remembered.querySelectorAll('button').forEach(b=>{ b.addEventListener('click', ()=>{ UI.username.value = b.dataset.u; passkeyLogin(); }); });
 }
-function parseChunkMeta(body){
-  const m = body.match(/^\[CHUNK\s+gid=([^\s]+)\s+idx=(\d+)\s+total=(\d+)\]/);
-  return m ? { gid:m[1], idx:+m[2], total:+m[3] } : null;
-}
-function stripChunkMeta(body){ return body.replace(/^\[CHUNK[^\]]+\]\s*\n?/, ''); }
-
-function stitchNotes(raw){
-  const groups = new Map(); const singles = [];
-  for(const n of raw||[]){
-    const meta = parseChunkMeta(n.body||'');
-    if(!meta){ singles.push({id:n.id,ids:[n.id],created_at:n.created_at,tz:n.tz,body:n.body}); continue; }
-    if(!groups.has(meta.gid)) groups.set(meta.gid,{gid:meta.gid,total:meta.total,chunks:[]});
-    groups.get(meta.gid).chunks.push({id:n.id,idx:meta.idx,created_at:n.created_at,tz:n.tz,body:stripChunkMeta(n.body||'')});
-  }
-  const stitched=[];
-  for(const g of groups.values()){
-    g.chunks.sort((a,b)=>a.idx-b.idx);
-    const body=g.chunks.map(c=>c.body).join('\n\n');
-    stitched.push({id:g.chunks[0].id,ids:g.chunks.map(c=>c.id),created_at:g.chunks[0].created_at,tz:g.chunks[0].tz,body});
-  }
-  return [...singles,...stitched].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+function refreshAuthUI(){ const authed = !!getSession();
+  UI.composer.style.display = authed ? 'block' : 'none';
+  UI.posts.style.display = authed ? 'block' : 'none';
+  UI.authState.textContent = authed ? 'Signed in' : 'Signed out';
 }
 
-function renderPosts(notes){
-  if(!postsBox) return;
-  const display=stitchNotes(notes);
-  if(!display.length){ postsBox.innerHTML='<div class="muted" style="padding:1rem">No posts.</div>'; return; }
-  postsBox.innerHTML=display.map(n=>{
-    const when=fmtLocal(n.created_at,n.tz);
-    const multi=n.ids.length>1;
-    return `
-      <article class="tweet" id="${n.id}" style="padding:1rem;border-top:1px solid var(--field-border)">
-        <div style="display:flex;gap:1rem">
-          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
-          <div class="tweet__body" style="flex:2">
-            <header class="tweet__head">
-              <span class="name">Levi Carver</span>
-              <span class="dot" aria-hidden="true">·</span>
-              <time datetime="${n.created_at}">${when}</time>
-              ${multi?'<span class="dot" aria-hidden="true">·</span><span class="muted">stitched</span>': ''}
-            </header>
-            <div class="tweet__text">${mdRender(n.body)}</div>
-          </div>
-          <div style="flex:1;display:flex;justify-content:flex-end;align-items:flex-start;gap:.5rem">
-            <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">
-              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
-                <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
-                <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
-              </svg>
-              <span class="sr-only">Permalink</span>
-            </a>
-            <button class="btn ghost" data-act="delete-post" data-ids='${JSON.stringify(n.ids)}'>Delete</button>
-          </div>
-        </div>
-      </article>`;
-  }).join('');
-  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer';});
-  postsBox.querySelectorAll('button[data-act="delete-post"]').forEach(b=>{
-    b.addEventListener('click',async()=>{
-      const ids=JSON.parse(b.getAttribute('data-ids')||'[]');
-      if(!ids.length) return;
-      if(!confirm(ids.length>1?`Delete this stitched post and all ${ids.length} chunks?`:`Delete this post?`)) return;
-      try{ for(const id of ids){ await notesDelete(id);} await loadPosts(); }
-      catch(e){ log('delete error →',e?.message||e); alert('Failed to delete'); }
+/* ===== WebAuthn helpers ===== */
+function b64urlToBuf(b64url){ const pad = '='.repeat((4 - b64url.length % 4) % 4);
+  const b64 = (b64url.replace(/-/g,'+').replace(/_/g,'/')) + pad; const raw = atob(b64);
+  const buf = new ArrayBuffer(raw.length); const view = new Uint8Array(buf);
+  for (let i=0;i<raw.length;i++) view[i] = raw.charCodeAt(i); return buf; }
+function bufToB64url(buf){ const bytes = new Uint8Array(buf); let bin=''; for (let i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+async function fetchJSON(url, init){ return api(url, init); }
+function addUserParam(url, username){
+  const u = new URL(url, ORIGIN);
+  if (username) u.searchParams.set('username', username.toLowerCase().trim());
+  return u.pathname + u.search;
+}
+async function waOptions(flow){
+  const username = (UI.username?.value || '').trim();
+  try { return { data: await fetchJSON(addUserParam(`/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch {}
+  try { return { data: await fetchJSON(addUserParam(`/api/webauthn/${flow}/options`, username), { method:'GET' }) }; } catch {}
+  throw new Error('No options endpoint');
+}
+async function waVerify(flow, payload){
+  try { return { data: await fetchJSON(`/webauthn/${flow}/verify`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) }; } catch {}
+  try { return { data: await fetchJSON(`/api/webauthn/${flow}/verify`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) }; } catch {}
+  throw new Error('No verify endpoint');
+}
+
+/* ===== Passkey flows ===== */
+async function passkeyRegister(){
+  try{
+    const username = UI.username.value.trim(); if (!username) { alert('Enter a username.'); return; }
+    const { data } = await waOptions('register');
+    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.user?.id) pk.user.id = b64urlToBuf(pk.user.id);
+    if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+    const cred = await navigator.credentials.create({ publicKey: pk });
+    const { data: out } = await waVerify('register', {
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      response: { attestationObject: bufToB64url(cred.response.attestationObject), clientDataJSON: bufToB64url(cred.response.clientDataJSON) }
     });
-  });
+    if (!out?.ok) throw new Error('Registration verify failed');
+    alert('Registered.');
+    saveUser(username);
+  }catch(e){ log('register error:', e?.message || e); alert('Register failed'); }
+}
+async function passkeyLogin(){
+  try{
+    const username = UI.username.value.trim();
+    const { data } = await waOptions('login');
+    const pk = data?.publicKey || data; if (!pk?.challenge) throw new Error('No publicKey in response');
+    pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map(c=>({ ...c, id: b64urlToBuf(c.id) }));
+    const cred = await navigator.credentials.get({ publicKey: pk });
+    const { data: out } = await waVerify('login', {
+      id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+      response: { authenticatorData: bufToB64url(cred.response.authenticatorData), clientDataJSON: bufToB64url(cred.response.clientDataJSON), signature: bufToB64url(cred.response.signature), userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null }
+    });
+    if (!out?.ok) throw new Error('Login verify failed');
+    setSession('ok'); UI.authUser.textContent = username ? `User: ${username}` : '';
+    await loadPosts();
+  }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
 }
 
-async function loadPosts(){
-  try{ const notes=await notesList(); window.__NOTES=Array.isArray(notes)?notes:[]; renderPosts(window.__NOTES);}
-  catch(e){ log('load posts error →',e?.message||e); postsBox.innerHTML='<div class="muted" style="padding:1rem">Could not load posts.</div>'; }
-}
+/* ===== Wire buttons ===== */
+UI.btnRegister?.addEventListener('click', passkeyRegister);
+UI.btnLogin?.addEventListener('click', passkeyLogin);
+UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
+renderSavedUsers(); refreshAuthUI();
 
-/* ---------- Wire preview updates ---------- */
-document.addEventListener('DOMContentLoaded', () => {
+/* ===== Stitch + render posts (your last working version) ===== */
+// ... keep your existing stitchNotes, renderPosts, loadPosts functions here ...
+
+/* ===== Init ===== */
+document.addEventListener('DOMContentLoaded', async ()=>{
   renderPreview();
   bodyEl?.addEventListener('input', renderPreview);
+  refreshAuthUI(); renderSavedUsers(); await loadPosts();
 });
 </script>
 </body>
