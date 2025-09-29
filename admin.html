@@ -85,7 +85,28 @@
 
       <section>
         <header class="muted">Preview</header>
-        <article id="preview" class="tweet__text admin-card" style="min-height:18rem"></article>
+       <div id="preview" class="admin-card" style="min-height:18rem;padding:0">
+  <article class="tweet" style="border:0;margin:0">
+    <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+    <div class="tweet__body">
+      <header class="tweet__head">
+        <span class="name">Levi Carver</span>
+        <span class="dot" aria-hidden="true">·</span>
+        <time id="preview-time" datetime=""></time>
+      </header>
+      <div id="preview-text" class="tweet__text"></div>
+      <div class="tweet__actions" style="opacity:.6">
+        <a class="permalink" href="javascript:void(0)" aria-label="Permalink (preview only)">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
+            <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
+            <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
+          </svg>
+          <span class="sr-only">Permalink</span>
+        </a>
+      </div>
+    </div>
+  </article>
+</div>
       </section>
 
       <div class="muted" style="grid-column:1/-1">
