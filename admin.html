@@ -85,28 +85,28 @@
 
       <section>
         <header class="muted">Preview</header>
-       <div id="preview" class="admin-card" style="min-height:18rem;padding:0">
-  <article class="tweet" style="border:0;margin:0">
-    <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
-    <div class="tweet__body">
-      <header class="tweet__head">
-        <span class="name">Levi Carver</span>
-        <span class="dot" aria-hidden="true">·</span>
-        <time id="preview-time" datetime=""></time>
-      </header>
-      <div id="preview-text" class="tweet__text"></div>
-      <div class="tweet__actions" style="opacity:.6">
-        <a class="permalink" href="javascript:void(0)" aria-label="Permalink (preview only)">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
-            <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
-            <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
-          </svg>
-          <span class="sr-only">Permalink</span>
-        </a>
-      </div>
-    </div>
-  </article>
-</div>
+        <div id="preview" class="admin-card" style="min-height:18rem;padding:0">
+          <article class="tweet" style="border:0;margin:0">
+            <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+            <div class="tweet__body">
+              <header class="tweet__head">
+                <span class="name">Levi Carver</span>
+                <span class="dot" aria-hidden="true">·</span>
+                <time id="preview-time" datetime=""></time>
+              </header>
+              <div id="preview-text" class="tweet__text"></div>
+              <div class="tweet__actions" style="opacity:.6">
+                <a class="permalink" href="javascript:void(0)" aria-label="Permalink (preview only)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
+                    <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
+                    <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
+                  </svg>
+                  <span class="sr-only">Permalink</span>
+                </a>
+              </div>
+            </div>
+          </article>
+        </div>
       </section>
 
       <div class="muted" style="grid-column:1/-1">
@@ -146,7 +146,39 @@ const dbg = $('#debug');
 function log(...args){ if(!dbg) return; dbg.value += args.map(v=>typeof v==='string'?v:JSON.stringify(v,null,2)).join(' ') + "\n"; dbg.scrollTop = dbg.scrollHeight; }
 
 /* ===== API, auth, preview, compose (unchanged from your last file)… ===== */
-/* ... keep your existing code for api, passkeys, notesCreate, etc. ... */
+/* ... keep your existing code for api, passkeys, notesCreate, notesList, notesDelete, etc. ... */
+
+/* ---------- Safe fallback for fmtLocal if your earlier block isn't present ---------- */
+if (typeof fmtLocal !== 'function') {
+  function fmtLocal(iso, tz){
+    const d = new Date(iso);
+    const zone = tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const ds = d.toLocaleString(undefined, { year:'numeric', month:'short', day:'2-digit', timeZone: zone });
+    const ts = d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: zone });
+    const tzLabel = new Intl.DateTimeFormat(undefined, { timeZoneName:'short', timeZone: zone })
+      .formatToParts(d).find(p=>p.type==='timeZoneName')?.value || zone;
+    return `${ds} ${ts} ${tzLabel}`;
+  }
+}
+
+/* ---------- Composer preview renderer (matches public view) ---------- */
+const bodyEl = $('#body');
+function renderPreview(){
+  if (!bodyEl) return;
+  marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
+  const html = DOMPurify.sanitize(marked.parse(bodyEl.value || ""), { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
+
+  const textBox = document.getElementById('preview-text');
+  const timeEl  = document.getElementById('preview-time');
+  if (!textBox || !timeEl) return;
+
+  textBox.innerHTML = html;
+  textBox.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+
+  const iso = new Date().toISOString();
+  timeEl.setAttribute('datetime', iso);
+  timeEl.textContent = fmtLocal(iso);
+}
 
 /* ===== Posts (stitch chunked posts) ===== */
 const postsBox = $('#posts-list');
@@ -228,6 +260,12 @@ async function loadPosts(){
   try{ const notes=await notesList(); window.__NOTES=Array.isArray(notes)?notes:[]; renderPosts(window.__NOTES);}
   catch(e){ log('load posts error →',e?.message||e); postsBox.innerHTML='<div class="muted" style="padding:1rem">Could not load posts.</div>'; }
 }
+
+/* ---------- Wire preview updates ---------- */
+document.addEventListener('DOMContentLoaded', () => {
+  renderPreview();
+  bodyEl?.addEventListener('input', renderPreview);
+});
 </script>
 </body>
 </html>
