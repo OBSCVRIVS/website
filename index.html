@@ -81,7 +81,7 @@
     }
   };
 
-  // ===== Notes render with shareable dedicated page =====
+  // ===== Notes render with chunk stitching =====
   (async function () {
     const pageSize = 10;
     let page = 0;
@@ -101,11 +101,37 @@
       return `${ds} · ${ts} ${tzLabel}`;
     }
 
+    function stitchChunks(rawNotes){
+      const groups = {};
+      const singles = [];
+
+      rawNotes.forEach(n=>{
+        const m = n.body.match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]\n?/);
+        if (m){
+          const gid = m[1], idx = parseInt(m[2],10), total = parseInt(m[3],10);
+          if (!groups[gid]) groups[gid] = { meta: n, parts: Array(total).fill(null) };
+          groups[gid].parts[idx-1] = n.body.replace(m[0],''); // strip marker
+        } else {
+          singles.push(n);
+        }
+      });
+
+      const stitched = Object.values(groups).map(g=>{
+        return {
+          ...g.meta,
+          body: g.parts.join('\n\n'),
+        };
+      });
+
+      return [...singles, ...stitched].sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+    }
+
     async function load(){
       try {
         const r = await fetch('/api/notes', { headers: { 'Accept':'application/json' } });
         if (!r.ok) throw new Error('Failed to fetch notes');
-        notes = await r.json();
+        const raw = await r.json();
+        notes = stitchChunks(raw);
         render();
       } catch {
         container.innerHTML = '<p class="muted">Could not load notes.</p>';
