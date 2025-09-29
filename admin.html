@@ -313,7 +313,7 @@ function renderPosts(notes){
   });
 }
 
-/* ===== Compose: ultra-safe sizes & split ===== */
+/* ===== Compose: ultra-safe sizes & split (with hidden chunk meta) ===== */
 const MAX_BYTES = 90000;            // UI reference only
 let   SEND_CAP_START = 1500;        // initial cap (~1.5 KB)
 const MIN_CAP = 500;                // smallest cap (~0.5 KB)
@@ -332,9 +332,8 @@ function payloadBytes(body){
   return enc.encode(JSON.stringify(sample)).length;
 }
 
-/* hard UTF-8 byte slice: returns a string whose JSON payload <= maxBytes */
+/* hard UTF-8 byte slice */
 function sliceBodyToBytes(text, maxBytes){
-  // binary search on char length, then trim on byte boundary
   let lo = 0, hi = text.length, cut = 0;
   while (lo <= hi){
     const mid = Math.floor((lo + hi) / 2);
@@ -343,12 +342,11 @@ function sliceBodyToBytes(text, maxBytes){
     else { hi = mid - 1; }
   }
   let out = text.slice(0, cut);
-  // final safety: if still too big (edge cases), drop last char(s)
   while (out && payloadBytes(out) > maxBytes) out = out.slice(0, -1);
   return out;
 }
 
-/* splitter that guarantees each part <= maxBytes, falling back to byte-slice */
+/* splitter that guarantees each part <= maxBytes */
 function splitByBytes(text, maxBytes){
   const parts = [];
   const paras = text.split(/\n{2,}/);
@@ -357,7 +355,6 @@ function splitByBytes(text, maxBytes){
     if (!buf.trim()) return;
     if (payloadBytes(buf) <= maxBytes){ parts.push(buf.trim()); }
     else {
-      // too large even after paragraph/sentence grouping → hard slice repeatedly
       let rest = buf.trim();
       while (rest){
         const chunk = sliceBodyToBytes(rest, maxBytes);
@@ -373,7 +370,6 @@ function splitByBytes(text, maxBytes){
     const next = buf ? (buf + '\n\n' + paras[i]) : paras[i];
     if (payloadBytes(next) <= maxBytes){ buf = next; continue; }
     if (!buf){
-      // split paragraph by sentences first
       const sents = paras[i].split(/(?<=[.!?])\s+(?=[A-Z(“"'\[])/);
       let sb = '';
       for (const s of sents){
@@ -381,7 +377,6 @@ function splitByBytes(text, maxBytes){
         if (payloadBytes(cand) <= maxBytes){ sb = cand; }
         else {
           if (sb){ parts.push(sb.trim()); sb=''; }
-          // hard slice this very long sentence
           let rest = s;
           while (payloadBytes(rest) > maxBytes){
             const chunk = sliceBodyToBytes(rest, maxBytes);
@@ -393,7 +388,7 @@ function splitByBytes(text, maxBytes){
       }
       if (sb.trim()) parts.push(sb.trim());
     } else {
-      push(); i--; // reprocess this paragraph as start of next part
+      push(); i--;
     }
   }
   push();
@@ -410,7 +405,7 @@ function updateByteUI(){
   if (size > MAX_BYTES) bc.classList.add('bad');
   else if (size > WARN_BYTES) bc.classList.add('warn');
   else bc.classList.add('ok');
-  btnPost.disabled = false; // we auto-chunk anyway
+  btnPost.disabled = false;
 }
 function trimBody(){
   bodyEl.value = bodyEl.value.replace(/[ \t]+$/gm, '').replace(/^\n+|\n+$/g, '');
@@ -429,7 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCollapse?.addEventListener('click', collapseBlanks);
 });
 
-/* ===== Save (adaptive backoff; guaranteed <= cap) ===== */
+/* ===== Save (adaptive backoff; hidden-stitch metadata) ===== */
 $('#note-form')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   trimBody(); collapseBlanks();
@@ -445,24 +440,31 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
     const maxPayload = Math.max(MIN_CAP, cap - SAFETY);
     const parts = payloadBytes(text) > maxPayload ? splitByBytes(text, maxPayload) : [text];
 
+    // one group id for this post
+    const gid = (crypto?.randomUUID?.() || (Date.now().toString(36)+Math.random().toString(36).slice(2)));
+
     const base = new Date();
     for (let i=0;i<parts.length;i++){
-      // final guard: enforce byte cap on each part
+      // final guard: enforce byte cap per part
       let body = parts[i];
       if (payloadBytes(body) > maxPayload){
         body = sliceBodyToBytes(body, maxPayload);
       }
-      const pfx = (parts.length > 1) ? `(Part ${i+1}/${parts.length})\n\n` : '';
+
+      // Hidden stitch marker (parsed on the public pages)
+      const meta = `[CHUNK gid=${gid} idx=${i+1} total=${parts.length}]`;
+
       const payload = {
-        body: pfx + body,
+        body: meta + '\n' + body,
         created_at: new Date(base.getTime() + i*1000).toISOString(),
         tz
       };
+
       const size = payloadBytes(payload.body);
       log('posting chunk', i+1, '/', parts.length, 'bytes=', size);
       btn.textContent = `Posting ${i+1}/${parts.length}…`;
-      await notesCreate(payload);            // throws on 413/other
-      await sleep(250);                      // tiny pacing
+      await notesCreate(payload);
+      await sleep(250);
     }
     return parts.length;
   }
@@ -483,7 +485,7 @@ $('#note-form')?.addEventListener('submit', async (e)=>{
           log('413 → shrinking cap to', cap);
           continue;
         }
-        throw err; // non-413 or already at min cap
+        throw err;
       }
     }
   }catch(err){
