@@ -31,7 +31,7 @@
     .mini-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
     .mini-actions button{ padding:.3rem .55rem; font-size:.85rem; }
 
-    /* Preview card: perfectly centered like frontend */
+    /* Preview card (same layout as frontend) */
     #preview { padding:0; }
     #preview .tweet { margin:0; border:0; }
     #preview .tweet__body { display:block; }
@@ -200,7 +200,7 @@ function mdRender(src){
   return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
 }
 
-/* ===== Live Preview (centered like frontend) ===== */
+/* ===== Live Preview ===== */
 const bodyEl = $('#body'); const previewTextEl = $('#preview-text'); const previewTimeEl = $('#preview-time');
 function renderPreview(){
   if (!bodyEl || !previewTextEl || !previewTimeEl) return;
@@ -520,78 +520,6 @@ function collapseBlanks(){
   renderPreview(); updateByteUI();
 }
 
-/* ===== Save (adaptive backoff; hidden-stitch metadata) ===== */
-$('#note-form')?.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  trimBody(); collapseBlanks();
-
-  const full = bodyEl.value || '';
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const btn = $('#btn-post'); const original = btn.textContent;
-  btn.disabled = true;
-
-  const sleep = ms => new Promise(r=>setTimeout(r, ms));
-
-  async function postMulti(text, cap){
-    const maxPayload = Math.max(MIN_CAP, cap - SAFETY);
-    const parts = payloadBytes(text) > maxPayload ? splitByBytes(text, maxPayload) : [text];
-
-    // one group id for this post (used by public pages to stitch)
-    const gid = (crypto?.randomUUID?.() || (Date.now().toString(36)+Math.random().toString(36).slice(2)));
-
-    const base = new Date();
-    for (let i=0;i<parts.length;i++){
-      // enforce byte cap per part
-      let body = parts[i];
-      if (payloadBytes(body) > maxPayload){
-        body = sliceBodyToBytes(body, maxPayload);
-      }
-
-      // Hidden stitch marker
-      const meta = `[CHUNK gid=${gid} idx=${i+1} total=${parts.length}]`;
-
-      const payload = {
-        body: meta + '\n' + body,
-        created_at: new Date(base.getTime() + i*1000).toISOString(),
-        tz
-      };
-
-      const size = payloadBytes(payload.body);
-      log('posting chunk', i+1, '/', parts.length, 'bytes=', size);
-      btn.textContent = `Posting ${i+1}/${parts.length}…`;
-      await notesCreate(payload);
-      await sleep(250);
-    }
-    return parts.length;
-  }
-
-  let cap = SEND_CAP_START;
-  try{
-    while (true){
-      try{
-        const posted = await postMulti(full, cap);
-        alert(`Posted ${posted} part(s).`);
-        bodyEl.value = ''; renderPreview(); updateByteUI();
-        await loadPosts();
-        break;
-      }catch(err){
-        const msg = String(err?.message || err);
-        if (msg.includes('413') && cap > MIN_CAP){
-          cap = Math.max(MIN_CAP, Math.floor(cap * 0.7)); // shrink and retry
-          log('413 → shrinking cap to', cap);
-          continue;
-        }
-        throw err;
-      }
-    }
-  }catch(err){
-    alert(`Failed to post.\n${err?.message || err}`);
-  }finally{
-    btn.textContent = original;
-    btn.disabled = false;
-  }
-});
-
 /* ===== Load posts ===== */
 async function loadPosts(){
   try{
@@ -609,7 +537,10 @@ async function loadPosts(){
 UI.btnRegister?.addEventListener('click', passkeyRegister);
 UI.btnLogin?.addEventListener('click', passkeyLogin);
 UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
-renderSavedUsers(); refreshAuthUI();
+$('#btn-trim')?.addEventListener('click', trimBody);
+$('#btn-collapse')?.addEventListener('click', collapseBlanks);
+$('#body')?.addEventListener('input', ()=>{ renderPreview(); updateByteUI(); });
+$('#btn-reload')?.addEventListener('click', loadPosts);
 
 $('#dbg-ping')?.addEventListener('click', async ()=>{
   const tries = ['/health','/api/health'];
