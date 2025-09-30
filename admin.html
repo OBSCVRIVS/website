@@ -7,14 +7,16 @@
   <link rel="stylesheet" href="styles.css">
   <meta name="theme-color" content="#FFFFFF">
 
-  <!-- Minimal, page-scoped styles for layout + icon + counter -->
+  <!-- Minimal, page-scoped styles -->
   <style>
     .admin-wrap { max-width: 960px; margin: 2rem auto; padding: 1rem; }
     .admin-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
     .admin-grid2 { display:grid; gap:1rem; grid-template-columns:1fr 1fr; }
-    .admin-card { border:1px solid var(--field-border); padding:1rem; border-radius:4px; background:var(--field); }
+    .admin-card { border:1px solid var(--field-border); padding:1rem; border-radius:12px; background:var(--field); }
+
     #posts-list .tweet { border: 0; border-top: 1px solid var(--field-border); margin: 0; }
     #posts-list .tweet:first-child { border-top: 0; }
+
     .permalink{ color:var(--muted); text-decoration:none; display:inline-flex; align-items:center; }
     .permalink:hover,.permalink:focus{ color:var(--accent); }
     .permalink svg{ width:16px; height:16px; display:block; }
@@ -28,6 +30,11 @@
     .bad{ color: #B00020; }
     .mini-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
     .mini-actions button{ padding:.3rem .55rem; font-size:.85rem; }
+
+    /* Preview card: perfectly centered like frontend */
+    #preview { padding:0; }
+    #preview .tweet { margin:0; border:0; }
+    #preview .tweet__body { display:block; }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
@@ -85,9 +92,11 @@
 
       <section>
         <header class="muted">Preview</header>
-        <div id="preview" class="admin-card" style="min-height:18rem;padding:0">
-          <article class="tweet" style="border:0;margin:0">
-            <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+        <div id="preview" class="admin-card" style="min-height:18rem">
+          <article class="tweet">
+            <div class="tweet__avatar">
+              <img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true">
+            </div>
             <div class="tweet__body">
               <header class="tweet__head">
                 <span class="name">Levi Carver</span>
@@ -97,7 +106,7 @@
               <div id="preview-text" class="tweet__text"></div>
               <div class="tweet__actions" style="opacity:.6">
                 <a class="permalink" href="javascript:void(0)" aria-label="Permalink (preview only)">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
                     <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
                   </svg>
@@ -167,23 +176,39 @@ function fmtLocal(iso, tz){
   return `${ds} ${ts} ${tzLabel}`;
 }
 
-/* ===== Markdown preview (composer) ===== */
-const bodyEl = $('#body');
-function renderPreview(){
-  if (!bodyEl) return;
+/* ===== Theme: auto by local clock (no geo) ===== */
+(function () {
+  const LIGHT_START_H = 7, LIGHT_END_H = 19;
+  function applyThemeByClock() {
+    const h = new Date().getHours();
+    const mode = (h >= LIGHT_START_H && h < LIGHT_END_H) ? 'light' : 'dark';
+    const html = document.documentElement;
+    html.setAttribute('data-theme', mode);
+    const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+    meta.setAttribute('content', bg);
+  }
+  applyThemeByClock();
+  setInterval(applyThemeByClock, 15 * 60 * 1000);
+})();
+
+/* ===== Markdown helpers ===== */
+function mdRender(src){
   marked.setOptions({ gfm:true, breaks:false, headerIds:true, mangle:false });
-  const html = DOMPurify.sanitize(marked.parse(bodyEl.value || ""), { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
+  const html = marked.parse(src || "");
+  return DOMPurify.sanitize(html, { ADD_ATTR:['target','rel'], FORBID_TAGS:['script','style'] });
+}
 
-  const textBox = document.getElementById('preview-text');
-  const timeEl  = document.getElementById('preview-time');
-  if (!textBox || !timeEl) return;
-
-  textBox.innerHTML = html;
-  textBox.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
-
+/* ===== Live Preview (centered like frontend) ===== */
+const bodyEl = $('#body'); const previewTextEl = $('#preview-text'); const previewTimeEl = $('#preview-time');
+function renderPreview(){
+  if (!bodyEl || !previewTextEl || !previewTimeEl) return;
+  previewTextEl.innerHTML = mdRender(bodyEl.value || "");
+  previewTextEl.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
   const iso = new Date().toISOString();
-  timeEl.setAttribute('datetime', iso);
-  timeEl.textContent = fmtLocal(iso);
+  previewTimeEl.setAttribute('datetime', iso);
+  previewTimeEl.textContent = fmtLocal(iso);
 }
 
 /* ===== Session + auth UI ===== */
@@ -271,20 +296,332 @@ async function passkeyLogin(){
   }catch(e){ log('login error:', e?.message || e); alert('Login failed'); }
 }
 
-/* ===== Wire buttons ===== */
+/* ===== Notes API (single endpoint, 413-aware) ===== */
+async function notesCreate(payload){
+  const ep = '/api/post';
+  const res = await fetch(ep, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (res.status === 413) throw new Error('413 Payload Too Large'); // caller shrinks
+  if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : {};
+}
+async function notesList(){
+  try { return await api('/api/notes?all=1'); } catch {}
+  try { return await api('/notes?all=1'); } catch {}
+  return await api('/api/notes');
+}
+async function notesDelete(id){
+  const tries = [
+    { url: `/notes/${encodeURIComponent(id)}`, method:'DELETE' },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'DELETE' },
+    { url: `/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
+    { url: `/api/notes/${encodeURIComponent(id)}`, method:'POST', body:{ action:'delete' } },
+  ];
+  let lastErr;
+  for (const t of tries){
+    try{
+      if (t.method === 'POST') {
+        return await api(t.url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(t.body) });
+      }
+      return await api(t.url, { method:t.method });
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Delete failed');
+}
+
+/* ===== Chunk meta helpers (hide gibberish & stitch) ===== */
+function parseChunkMeta(body){
+  const m = body.match(/^\[CHUNK\s+gid=([^\s]+)\s+idx=(\d+)\s+total=(\d+)\]/);
+  return m ? { gid:m[1], idx:+m[2], total:+m[3] } : null;
+}
+function stripChunkMeta(body){ return (body||'').replace(/^\[CHUNK[^\]]+\]\s*\n?/, ''); }
+
+/* ===== Posts (stitch & render like frontend) ===== */
+const postsBox = $('#posts-list');
+$('#btn-reload')?.addEventListener('click', loadPosts);
+
+function stitchNotes(raw){
+  const groups = new Map(); const singles = [];
+  for(const n of (raw||[])){
+    const meta = parseChunkMeta(n.body||'');
+    if(!meta){
+      singles.push({id:n.id,ids:[n.id],created_at:n.created_at,tz:n.tz,body:n.body});
+      continue;
+    }
+    if(!groups.has(meta.gid)) groups.set(meta.gid,{gid:meta.gid,total:meta.total,chunks:[]});
+    groups.get(meta.gid).chunks.push({
+      id:n.id, idx:meta.idx, created_at:n.created_at, tz:n.tz, body:stripChunkMeta(n.body||'')
+    });
+  }
+  const stitched=[];
+  for(const g of groups.values()){
+    g.chunks.sort((a,b)=>a.idx-b.idx);
+    const body=g.chunks.map(c=>c.body).join('\n\n');
+    stitched.push({id:g.chunks[0].id, ids:g.chunks.map(c=>c.id), created_at:g.chunks[0].created_at, tz:g.chunks[0].tz, body});
+  }
+  return [...singles,...stitched].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+}
+
+function renderPosts(notes){
+  if (!postsBox) return;
+  const display = stitchNotes(notes);
+  if (!display.length){
+    postsBox.innerHTML = '<div class="muted" style="padding:1rem">No posts.</div>';
+    return;
+  }
+
+  postsBox.innerHTML = display.map(n=>{
+    const when = fmtLocal(n.created_at, n.tz);
+    const multi = (n.ids?.length||0) > 1;
+    return `
+      <article class="tweet" id="${n.id}" style="padding:1rem;border-top:1px solid var(--field-border)">
+        <div style="display:flex;gap:1rem">
+          <div class="tweet__avatar"><img src="assets/img/avatar_anime_blue_hour.png" alt="" aria-hidden="true"></div>
+          <div class="tweet__body" style="flex:2">
+            <header class="tweet__head">
+              <span class="name">Levi Carver</span>
+              <span class="dot" aria-hidden="true">·</span>
+              <time datetime="${n.created_at}">${when}</time>
+              ${multi?'<span class="dot" aria-hidden="true">·</span><span class="muted">stitched</span>': ''}
+            </header>
+            <div class="tweet__text">${mdRender(n.body)}</div>
+          </div>
+          <div style="flex:1;display:flex;justify-content:flex-end;align-items:flex-start;gap:.5rem">
+            <a class="permalink" href="/notes.html?id=${encodeURIComponent(n.id)}" aria-label="Permalink">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.172 13.828a4 4 0 0 0 5.656 0l3-3a4 4 0 1 0-5.656-5.656l-1.172 1.172"/>
+                <path d="M13.828 10.172a4 4 0 0 0-5.656 0l-3 3a4 4 0 1 0 5.656 5.656l1.172-1.172"/>
+              </svg>
+              <span class="sr-only">Permalink</span>
+            </a>
+            <button class="btn ghost" data-act="delete-post" data-ids='${JSON.stringify(n.ids||[n.id])}'>Delete</button>
+          </div>
+        </div>
+      </article>`;
+  }).join('');
+
+  postsBox.querySelectorAll('.tweet__text a').forEach(a=>{ a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+
+  postsBox.querySelectorAll('button[data-act="delete-post"]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const ids = JSON.parse(b.getAttribute('data-ids')||'[]');
+      if (!ids.length) return;
+      if (!confirm(ids.length>1?`Delete this stitched post and all ${ids.length} chunks?`:`Delete this post?`)) return;
+      try { for (const id of ids) await notesDelete(id); await loadPosts(); }
+      catch(e){ log('delete error →', e?.message||e); alert('Failed to delete'); }
+    });
+  });
+}
+
+/* ===== Compose: ultra-safe sizes & split (with hidden chunk meta) ===== */
+const MAX_BYTES = 90000;
+let   SEND_CAP_START = 1500;
+const MIN_CAP = 500;
+const SAFETY = 150;
+const WARN_BYTES = Math.floor(MAX_BYTES * 0.8);
+const enc = new TextEncoder();
+
+const byteNowEl = $('#byte-now');
+const byteMaxEl = $('#byte-max');
+const btnPost = $('#btn-post');
+const btnTrim = $('#btn-trim');
+const btnCollapse = $('#btn-collapse');
+
+function payloadBytes(body){
+  const sample = { body, created_at: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  return enc.encode(JSON.stringify(sample)).length;
+}
+
+/* hard UTF-8 byte slice */
+function sliceBodyToBytes(text, maxBytes){
+  let lo = 0, hi = text.length, cut = 0;
+  while (lo <= hi){
+    const mid = Math.floor((lo + hi) / 2);
+    const piece = text.slice(0, mid);
+    if (payloadBytes(piece) <= maxBytes){ cut = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  let out = text.slice(0, cut);
+  while (out && payloadBytes(out) > maxBytes) out = out.slice(0, -1);
+  return out;
+}
+
+/* splitter that guarantees each part <= maxBytes */
+function splitByBytes(text, maxBytes){
+  const parts = [];
+  const paras = text.split(/\n{2,}/);
+  let buf = '';
+  const push = ()=>{
+    if (!buf.trim()) return;
+    if (payloadBytes(buf) <= maxBytes){ parts.push(buf.trim()); }
+    else {
+      let rest = buf.trim();
+      while (rest){
+        const chunk = sliceBodyToBytes(rest, maxBytes);
+        if (!chunk) break;
+        parts.push(chunk);
+        rest = rest.slice(chunk.length);
+      }
+    }
+    buf = '';
+  };
+
+  for (let i=0;i<paras.length;i++){
+    const next = buf ? (buf + '\n\n' + paras[i]) : paras[i];
+    if (payloadBytes(next) <= maxBytes){ buf = next; continue; }
+    if (!buf){
+      const sents = paras[i].split(/(?<=[.!?])\s+(?=[A-Z(“"'\[])/);
+      let sb = '';
+      for (const s of sents){
+        const cand = sb ? (sb + ' ' + s) : s;
+        if (payloadBytes(cand) <= maxBytes){ sb = cand; }
+        else {
+          if (sb){ parts.push(sb.trim()); sb=''; }
+          let rest = s;
+          while (payloadBytes(rest) > maxBytes){
+            const chunk = sliceBodyToBytes(rest, maxBytes);
+            parts.push(chunk.trim());
+            rest = rest.slice(chunk.length);
+          }
+          if (rest.trim()) sb = rest;
+        }
+      }
+      if (sb.trim()) parts.push(sb.trim());
+    } else {
+      push(); i--;
+    }
+  }
+  push();
+  return parts;
+}
+
+function updateByteUI(){
+  if (!bodyEl) return;
+  const size = payloadBytes(bodyEl.value);
+  byteNowEl.textContent = String(size);
+  byteMaxEl.textContent = String(MAX_BYTES);
+  const bc = byteNowEl.parentElement;
+  bc.classList.remove('ok','warn','bad');
+  if (size > MAX_BYTES) bc.classList.add('bad');
+  else if (size > WARN_BYTES) bc.classList.add('warn');
+  else bc.classList.add('ok');
+  btnPost.disabled = false;
+}
+function trimBody(){
+  bodyEl.value = bodyEl.value.replace(/[ \t]+$/gm, '').replace(/^\n+|\n+$/g, '');
+  renderPreview(); updateByteUI();
+}
+function collapseBlanks(){
+  bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
+  renderPreview(); updateByteUI();
+}
+
+/* ===== Save (adaptive backoff; hidden-stitch metadata) ===== */
+$('#note-form')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  trimBody(); collapseBlanks();
+
+  const full = bodyEl.value || '';
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const btn = $('#btn-post'); const original = btn.textContent;
+  btn.disabled = true;
+
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+  async function postMulti(text, cap){
+    const maxPayload = Math.max(MIN_CAP, cap - SAFETY);
+    const parts = payloadBytes(text) > maxPayload ? splitByBytes(text, maxPayload) : [text];
+
+    // one group id for this post (used by public pages to stitch)
+    const gid = (crypto?.randomUUID?.() || (Date.now().toString(36)+Math.random().toString(36).slice(2)));
+
+    const base = new Date();
+    for (let i=0;i<parts.length;i++){
+      // enforce byte cap per part
+      let body = parts[i];
+      if (payloadBytes(body) > maxPayload){
+        body = sliceBodyToBytes(body, maxPayload);
+      }
+
+      // Hidden stitch marker
+      const meta = `[CHUNK gid=${gid} idx=${i+1} total=${parts.length}]`;
+
+      const payload = {
+        body: meta + '\n' + body,
+        created_at: new Date(base.getTime() + i*1000).toISOString(),
+        tz
+      };
+
+      const size = payloadBytes(payload.body);
+      log('posting chunk', i+1, '/', parts.length, 'bytes=', size);
+      btn.textContent = `Posting ${i+1}/${parts.length}…`;
+      await notesCreate(payload);
+      await sleep(250);
+    }
+    return parts.length;
+  }
+
+  let cap = SEND_CAP_START;
+  try{
+    while (true){
+      try{
+        const posted = await postMulti(full, cap);
+        alert(`Posted ${posted} part(s).`);
+        bodyEl.value = ''; renderPreview(); updateByteUI();
+        await loadPosts();
+        break;
+      }catch(err){
+        const msg = String(err?.message || err);
+        if (msg.includes('413') && cap > MIN_CAP){
+          cap = Math.max(MIN_CAP, Math.floor(cap * 0.7)); // shrink and retry
+          log('413 → shrinking cap to', cap);
+          continue;
+        }
+        throw err;
+      }
+    }
+  }catch(err){
+    alert(`Failed to post.\n${err?.message || err}`);
+  }finally{
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
+
+/* ===== Load posts ===== */
+async function loadPosts(){
+  try{
+    const notes = await notesList();
+    window.__NOTES = Array.isArray(notes) ? notes : [];
+    renderPosts(window.__NOTES);
+  }catch(e){
+    log('load posts error →', e?.message || e);
+    const postsBox = $('#posts-list');
+    if (postsBox) postsBox.innerHTML = '<div class="muted" style="padding:1rem">Could not load posts.</div>';
+  }
+}
+
+/* ===== Wire + init ===== */
 UI.btnRegister?.addEventListener('click', passkeyRegister);
 UI.btnLogin?.addEventListener('click', passkeyLogin);
 UI.btnLogout?.addEventListener('click', ()=>{ setSession(null); UI.authUser.textContent=''; });
 renderSavedUsers(); refreshAuthUI();
 
-/* ===== Stitch + render posts (your last working version) ===== */
-// ... keep your existing stitchNotes, renderPosts, loadPosts functions here ...
+$('#dbg-ping')?.addEventListener('click', async ()=>{
+  const tries = ['/health','/api/health'];
+  for (const t of tries) { try { const j = await api(t); log('ping →', t, j); return; } catch(e){ log('ping error →', t, e?.message||e); } }
+});
+$('#dbg-session')?.addEventListener('click', ()=> log('session →', { token: getSession(), origin: ORIGIN }));
+$('#dbg-clear')?.addEventListener('click', ()=> { if(dbg) dbg.value=''; });
 
-/* ===== Init ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
-  renderPreview();
-  bodyEl?.addEventListener('input', renderPreview);
-  refreshAuthUI(); renderSavedUsers(); await loadPosts();
+  renderPreview(); updateByteUI(); refreshAuthUI(); renderSavedUsers();
+  await loadPosts();
+  localStorage.removeItem('API_BASE');
 });
 </script>
 </body>
