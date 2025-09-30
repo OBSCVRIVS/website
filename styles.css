@@ -603,3 +603,39 @@ input:invalid, textarea:invalid { border-color: #e5484d; }
   box-shadow: 0 2px 6px rgba(0,0,0,.08);
   outline: none;
 }
+/* === Close keycap: centered × esc === */
+.note-page { position: relative; }
+
+.note-close{
+  all: unset;                               /* wipe earlier styles clean */
+  position: absolute; top: 12px; right: 12px;
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: center;
+  gap: .42rem;
+
+  padding: .46rem .74rem;
+  min-width: 86px;                          /* keeps text centered in pill */
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--muted);
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 3;
+  transition: background .2s, color .2s, border-color .2s, box-shadow .2s;
+}
+
+.note-close .x   { font-size: 1.18rem; line-height: 1; }
+.note-close .esc { font-size: .88rem;  letter-spacing: .04em; text-transform: lowercase; }
+
+.note-close:hover,
+.note-close:focus{
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--field));
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  outline: none;
+}
