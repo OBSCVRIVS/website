@@ -523,3 +523,40 @@ input:invalid, textarea:invalid { border-color: #e5484d; }
   letter-spacing: 0.05em;
   opacity: 0.8;
 }
+/* === Note close button: balanced X + ESC (final override) === */
+.note-page { position: relative; } /* ensure absolute child anchors correctly */
+
+.note-page .note-close{
+  position: absolute;
+  top: .75rem;
+  right: .75rem;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .46rem;
+
+  padding: .42rem .72rem;           /* comfy pill */
+  border-radius: 10px;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  color: var(--muted);
+
+  line-height: 1;                   /* tight vertical rhythm */
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s, color .2s, border-color .2s, box-shadow .2s;
+}
+
+/* Slightly larger X, slightly smaller ESC */
+.note-page .note-close .x  { font-size: 1.12rem; line-height: 1; }
+.note-page .note-close .esc{ font-size: .84rem;  letter-spacing: .05em; opacity: .9; }
+
+.note-page .note-close:hover,
+.note-page .note-close:focus{
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--field));
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  outline: none;
+}
