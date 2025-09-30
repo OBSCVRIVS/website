@@ -639,3 +639,48 @@ input:invalid, textarea:invalid { border-color: #e5484d; }
   box-shadow: 0 2px 6px rgba(0,0,0,.08);
   outline: none;
 }
+/* === FINAL: Note close pill (centred, no glyph bleed) === */
+.note-page { position: relative; }
+
+.note-page .note-close{
+  position: absolute; top: 12px; right: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .48rem;
+  padding: .50rem .80rem;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--muted);
+  box-sizing: border-box;
+  white-space: nowrap;
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s, color .2s, border-color .2s, box-shadow .2s;
+}
+
+.note-page .note-close .x{
+  /* fix the overhang by boxing & centring the glyph */
+  display: inline-block;
+  width: 1.25em;                 /* gives breathing room */
+  text-align: center;
+  font-size: 1.28rem;            /* slightly larger than “esc” */
+  line-height: 1;
+  transform: translateY(-.02em); /* tiny optical nudge */
+}
+
+.note-page .note-close .esc{
+  font-size: .90rem;
+  letter-spacing: .04em;
+  text-transform: lowercase;
+  line-height: 1;
+}
+
+.note-page .note-close:hover,
+.note-page .note-close:focus{
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--field));
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+  outline: none;
+}
