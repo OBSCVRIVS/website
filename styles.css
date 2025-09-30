@@ -487,29 +487,39 @@ input:invalid, textarea:invalid { border-color: #e5484d; }
   color: var(--accent);
 }
 .note-close {
-  background: none;
-  border: none;
+  background: var(--field);
+  border: 1px solid var(--field-border);
   color: var(--muted);
-  font-size: 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
   cursor: pointer;
   position: absolute;
   top: .75rem;
   right: .75rem;
-  padding: .35rem .6rem;
-  border-radius: 6px;
+  padding: .35rem .65rem;
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: .35rem;
-  transition: background .2s, color .2s;
+  gap: .4rem;
+  line-height: 1;
+  transition: background .2s, color .2s, border-color .2s;
 }
+
 .note-close:hover,
 .note-close:focus {
   background: rgba(0,0,0,0.05);
   color: var(--accent);
+  border-color: var(--accent);
   outline: none;
 }
+
+.note-close .x {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .note-close .esc {
-  font-size: .85rem;
-  opacity: .7;
-  letter-spacing: .03em;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
 }
