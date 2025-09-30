@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js" defer></script>
 
-  <!-- Page-scoped styles for the framed note + close button -->
+  <!-- Page-scoped styles for the framed note + improved close button -->
   <style>
     .note-page{
       background: var(--field);
@@ -21,24 +21,40 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       position: relative;
     }
+
+    /* Close button: pill with ✕ + ESC */
     .note-close{
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 1.25rem;
-      line-height: 1;
-      cursor: pointer;
-      position: absolute;
-      top: .75rem;
-      right: .75rem;
-      padding: .25rem;
-      border-radius: 50%;
-      transition: background .2s, color .2s;
+      position:absolute;
+      top:.75rem;
+      right:.75rem;
+      display:flex;
+      align-items:center;
+      gap:.4rem;
+      padding:.35rem .65rem;
+      border-radius:10px;
+      background:var(--field);
+      border:1px solid var(--field-border);
+      color:var(--muted);
+      line-height:1;
+      font-weight:500;
+      font-size:.9rem;
+      cursor:pointer;
+      box-shadow:0 1px 2px rgba(0,0,0,.04);
+      transition:background .2s, color .2s, border-color .2s, box-shadow .2s;
     }
     .note-close:hover,.note-close:focus{
-      background: rgba(0,0,0,0.05);
-      color: var(--accent);
-      outline: none;
+      background:rgba(0,0,0,.05);
+      color:var(--accent);
+      border-color:var(--accent);
+      outline:none;
+      box-shadow:0 2px 6px rgba(0,0,0,.08);
+    }
+    .note-close .x{ font-size:1rem; line-height:1; }
+    .note-close .esc{ font-size:.8rem; letter-spacing:.05em; opacity:.85; }
+
+    /* On very small screens, just show the X */
+    @media (max-width:420px){
+      .note-close .esc{ display:none; }
     }
   </style>
 </head>
@@ -60,9 +76,8 @@
     <section class="note-page">
       <article id="note" class="tweet" aria-live="polite" style="cursor:auto"></article>
       <button class="note-close" id="close-btn" aria-label="Close and return to feed">
-  <span class="x">✕</span>
-  <span class="esc">ESC</span>
-</button>
+        <span class="x">✕</span><span class="esc">ESC</span>
+      </button>
     </section>
   </main>
 
@@ -104,39 +119,27 @@
   const noteBox = $('#note');
   const closeBtn = $('#close-btn');
 
-  async function fetchNote(noteId){
-    try{
-      const r=await fetch('/api/notes/'+encodeURIComponent(noteId),{headers:{Accept:'application/json'}});
-      if(r.ok) return await r.json();
-    }catch{}
-    const r=await fetch('/api/notes',{headers:{Accept:'application/json'}});
-    if(!r.ok) throw new Error('Load failed');
-    const all=await r.json();
-    return all.find(n=>n.id===noteId)||null;
-  }
-
   async function fetchAllNotes(){
-    const r=await fetch('/api/notes',{headers:{Accept:'application/json'}});
-    if(!r.ok) return [];
-    return await r.json();
+    try{
+      const r=await fetch('/api/notes',{headers:{Accept:'application/json'}});
+      if(!r.ok) return [];
+      return await r.json();
+    }catch{ return []; }
   }
 
   function stitchChunks(rawNotes, targetId){
-    // find if targetId belongs to a chunk group
     const target = rawNotes.find(n=>n.id===targetId);
     if(!target) return null;
-
-    const m = target.body.match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]/);
+    const m = (target.body||'').match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]/);
     if(!m) return target;
 
     const gid = m[1], total = parseInt(m[3],10);
-    const group = rawNotes.filter(n=>n.body.startsWith(`[CHUNK gid=${gid}`));
-    if(group.length < total) return target; // incomplete
+    const group = rawNotes.filter(n=>(n.body||'').startsWith(`[CHUNK gid=${gid}`));
+    if(group.length < total) return target;
 
-    // order by idx
     const parts = [];
     group.forEach(n=>{
-      const mm = n.body.match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]\n?/);
+      const mm = (n.body||'').match(/^\[CHUNK gid=(\S+) idx=(\d+) total=(\d+)\]\n?/);
       if(mm){
         const idx = parseInt(mm[2],10);
         parts[idx-1] = n.body.replace(mm[0],'');
@@ -145,11 +148,15 @@
     return { ...target, body: parts.join("\n\n") };
   }
 
-  // Smart close
   function smartClose(){
     const sameOriginRef = document.referrer && (()=>{ try{ return new URL(document.referrer).origin===location.origin; }catch{ return false; }})();
     if (sameOriginRef) { history.back(); } else { location.href = '/'; }
   }
+
+  // ESC keyboard support
+  document.addEventListener('keydown', (e)=>{
+    if (e.key === 'Escape') smartClose();
+  });
 
   (async()=>{
     if(!id){ noteBox.innerHTML='<p class="muted">No note id provided.</p>'; return; }
