@@ -519,7 +519,69 @@ function collapseBlanks(){
   bodyEl.value = bodyEl.value.replace(/\n{3,}/g, '\n\n');
   renderPreview(); updateByteUI();
 }
+/* ===== Save (adaptive backoff; hidden-stitch metadata) ===== */
+document.querySelector('#note-form')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  trimBody(); collapseBlanks();
 
+  const full = (document.querySelector('#body')?.value || '');
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const btn = document.querySelector('#btn-post');
+  const original = btn.textContent;
+  btn.disabled = true;
+
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+  async function postMulti(text, cap){
+    const maxPayload = Math.max(MIN_CAP, cap - SAFETY);
+    const parts = payloadBytes(text) > maxPayload ? splitByBytes(text, maxPayload) : [text];
+    const gid = (crypto?.randomUUID?.() || (Date.now().toString(36)+Math.random().toString(36).slice(2)));
+    const base = new Date();
+
+    for (let i=0;i<parts.length;i++){
+      let body = parts[i];
+      if (payloadBytes(body) > maxPayload) body = sliceBodyToBytes(body, maxPayload);
+      const meta = `[CHUNK gid=${gid} idx=${i+1} total=${parts.length}]`;
+      const payload = {
+        body: meta + '\n' + body,
+        created_at: new Date(base.getTime() + i*1000).toISOString(),
+        tz
+      };
+      btn.textContent = `Posting ${i+1}/${parts.length}…`;
+      await notesCreate(payload);
+      await sleep(200);
+    }
+    return parts.length;
+  }
+
+  let cap = SEND_CAP_START;
+  try{
+    while (true){
+      try{
+        const posted = await postMulti(full, cap);
+        alert(`Posted ${posted} part(s).`);
+        const bodyEl = document.querySelector('#body');
+        if (bodyEl) bodyEl.value = '';
+        renderPreview(); updateByteUI();
+        await loadPosts();
+        break;
+      }catch(err){
+        const msg = String(err?.message||err);
+        if (msg.includes('413') && cap > MIN_CAP){
+          cap = Math.max(MIN_CAP, Math.floor(cap * 0.7));
+          log('413 → shrinking cap to', cap);
+          continue;
+        }
+        throw err;
+      }
+    }
+  }catch(err){
+    alert(`Failed to post.\n${err?.message||err}`);
+  }finally{
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
 /* ===== Load posts ===== */
 async function loadPosts(){
   try{
